@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Mazot & Hesap</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b1220">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
 :root{--bg:#0b1220;--card:#111a2e;--ink:#e8edf7;--mut:#8b97ad;--acc:#3b82f6;--line:#1f2b46;--bad:#f87171;--or:#f5a524;--gr:#22c78a;
@@ -149,4 +153,185 @@ $('np').onclick=()=>{const p=np();S.profiles.push(p);S.cur=p.id;save();drawAll()
 $('rate').onchange=e=>{P().rate=num(e.target.value);save();drawCalc()};
 $('rd').onclick=()=>{
  if($('rate-ed'))return;
- const i=document.createEl
+ const i=document.createElement('input');i.id='rate-ed';i.type='number';i.step='0.1';i.inputMode='decimal';i.placeholder='L/100km';i.style.marginTop='8px';
+ i.onchange=()=>{const v=num(i.value);if(v>0){P().rate=v;save();drawRate(P());drawCalc()}i.remove()};
+ $('rd').after(i);i.focus();
+};
+$('ab').onclick=()=>{const p=P();p.buys.push({l:'',u:''});save();drawBuys(p);const a=$('buys').querySelectorAll('input');if(a.length>1)a[a.length-2].focus()};
+$('buys').onclick=e=>{const i=e.target.dataset.bd;if(i!==undefined){const sn=snap();P().buys.splice(+i,1);save();drawBuys(P());drawCalc();toast('Alım silindi.',sn)}};
+$('buys').oninput=e=>{const t=e.target,p=P();if(t.dataset.i!=null){p.buys[t.dataset.i][t.dataset.k]=t.value;save();drawCalc()}};
+$('fa').onclick=()=>{
+ const p=P(),c=calc(p);
+ if(!(c.yol>0)){alert('Çıkış ve şu anki km gir.');return}
+ const used=p.real!==''?c.tot-num(p.real):null;
+ S.hist.push({id:Date.now(),d1:p.d1,d2:p.d2,pc:p.pc,pd:p.pd,k1:num(p.k1),kn:num(p.kn),yol:c.yol,l1:num(p.l1),buys:p.buys.filter(b=>num(b.l)>0),real:p.real,avg:used!=null?used/c.yol*100:null});
+ p.k1=p.kn;p.l1=p.real!==''?p.real:Math.max(0,c.kal);p.kn='';p.buys=[];p.real='';p.d1=p.d2=today();
+ save();drawAll();
+};
+$('fl-list').onclick=e=>{const i=e.target.dataset.h;if(i){const sn=snap();S.hist=S.hist.filter(x=>x.id!=i);save();drawHist();toast('Sefer kaydı silindi.',sn)}};
+
+// Hesap
+if(!S.trips||!S.trips.length){S.trips=[newTrip()];S.tcur=S.trips[0].id}
+function newTrip(){return{id:Date.now()+Math.random(),rota:'',hT:'',hP:'',av:'',exp:[],pa:'',ps:1,pu:15,ph:25,pd:'',pdu:''}}
+const T=()=>{const t=S.trips.find(t=>t.id==S.tcur)||S.trips[0];if(t.pu===undefined)Object.assign(t,{pa:'',ps:1,pu:15,ph:25,pd:'',pdu:''});return t};
+const SYM={EUR:'€',TL:'₺'};
+const CATS=['Yol / Köprü','Yemek','Park','Tamir','Diğer'];
+const sumCur=(t,c)=>t.exp.filter(x=>x.cur==c).reduce((s,x)=>s+x.a,0);
+function shell(c){
+ const e=c=='EUR';
+ $('pane'+c).innerHTML=`<div class="grid" id="${c}-sum"></div>
+ <div class="card"><div class="lab">${e?'Avrupa gideri (harcırahtan)':'Türkiye masrafı (avanstan)'}</div>
+  <label class="add" style="display:block;text-align:center;margin:0 0 6px;background:var(--or);color:#1a1200">📷 Fiş fotoğrafı çek<input type="file" accept="image/*" capture="environment" data-rc="${c}" style="display:none"></label>
+  <div id="${c}-rc" class="mut" style="margin-bottom:6px"></div>
+  <div class="row"><div><label>Tarih</label><input type="date" id="${c}-d" value="${today()}"></div><div><label>Kategori</label><select id="${c}-c">${CATS.map(x=>'<option>'+x+'</option>').join('')}</select></div></div>
+  <div class="row"><div><label>Tutar (${SYM[c]})</label><input type="number" id="${c}-a" inputmode="decimal" step="0.01"></div>${e?`<div><label>Ülke</label><input id="${c}-u" placeholder="DE, NL, BE"></div>`:`<div><label>Not</label><input id="${c}-n"></div>`}</div>
+  <label>Ödeme türü</label><select id="${c}-t"><option>Nakit</option><option>Fişli</option></select>
+  ${e?`<label>Not</label><input id="${c}-n">`:''}
+  <button class="add" data-add="${c}">Gideri kaydet</button></div>
+ <div class="card"><div class="lab">Kategoriye göre</div><div id="${c}-cats"></div></div>
+ <div class="card" id="${c}-list"></div>`;
+}
+function drawPane(c){
+ const t=T(),L=t.exp.filter(x=>x.cur==c),tot=sumCur(t,c),sy=SYM[c];
+ const card=(l,v,cls,span)=>`<div class="card" ${span?'style="grid-column:1/3"':''}><div class="lab">${l}</div><div class="big ${cls}"><span>${f(v)}</span><u>${sy}</u></div></div>`;
+ if(c=='TL'){const k=num(t.av)-tot;
+  $('TL-sum').innerHTML=card('Avans alınan',num(t.av),'blue')+card('Harcanan',tot,'or')+card('Kalan',k,k<0?'':'gr',1)}
+ else{const el=num(t.hP)-tot,net=num(t.hT)-tot,pc=parCalc(t);
+  $('EUR-sum').innerHTML=card('Harcırah toplam',num(t.hT),'blue')+card('Peşin alınan',num(t.hP),'blue')+card('Harcanan',tot,'or')+card('Elde kalan',el,el<0?'':'gr')+card('Harcırah bitişte alınacak',num(t.hT)-num(t.hP),'blue')+card('Parsiyel alacak',pc.adr+pc.ret,'blue')+card('Telefon alacak',pc.ph,'blue')+card('Şirketten alınacak toplam',num(t.hT)-num(t.hP)+pc.adr+pc.ret+pc.ph,'gr')+card('Sefer sonu net (alacaklar dahil)',net+pc.adr+pc.ret+pc.ph,net+pc.adr+pc.ret+pc.ph<0?'':'gr',1)}
+ const cats={};L.forEach(x=>{cats[x.cat]=(cats[x.cat]||0)+x.a});
+ const tp=k=>L.filter(x=>x.tip==k).reduce((s,x)=>s+x.a,0);
+ const tipHTML=L.length?`<div class="item"><div><b>Nakit verilen</b></div><div><b>${f(tp('Nakit'))} ${sy}</b></div></div><div class="item"><div><b>Fişli</b></div><div><b>${f(tp('Fişli'))} ${sy}</b></div></div>`:'';
+ $(c+'-cats').innerHTML=Object.keys(cats).length?tipHTML+Object.keys(cats).map(k=>`<div class="item"><div>${k}</div><div>${f(cats[k])} ${sy}</div></div>`).join(''):'<div class="empty">Henüz gider yok.</div>';
+ const fd=d=>String(d||'').split('-').reverse().join('.');
+ const srt=[...L].sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:(x.tip==y.tip?x.id-y.id:((x.tip||'Nakit')=='Nakit'?-1:1)));
+ let last=null;
+ $(c+'-list').innerHTML=srt.length?srt.map(x=>{let h='';if(x.d!==last){last=x.d;h=`<div class="lab" style="margin-top:10px">${fd(x.d)}</div>`}
+  return h+`<div class="item"><div>${x.tip=='Fişli'?'🧾 ':''}${x.cat}${x.u?' · '+x.u:''}<small>${x.tip||'Nakit'}${x.n?' · '+x.n:''}</small></div><div class="out">−${f(x.a)} ${sy} <button data-x="${x.id}">✕</button></div></div>`}).join(''):'<div class="empty">Gider ekleyince burada listelenir.</div>';
+}
+function drawAcc(){
+ const t=T();
+ $('tsel').innerHTML=S.trips.map(x=>`<option value="${x.id}">${x.rota||'Yeni sefer'}</option>`).join('');$('tsel').value=t.id;
+ drawPane('TL');drawPane('EUR');drawPar();
+}
+function fillTrip(){const t=T();$('rota').value=t.rota;$('hT').value=t.hT;$('hP').value=t.hP;$('av').value=t.av;fillPar()}
+shell('TL');shell('EUR');
+function shellPar(){
+ $('panePAR').innerHTML=`<div class="card"><div class="lab">Parsiyel</div>
+ <div class="row"><div><label>Parsiyel adres sayısı</label><input id="q-pa" type="number" inputmode="numeric"></div><div><label>Adres başı ücret (€)</label><input id="q-pu" type="number" inputmode="decimal"></div></div>
+ <label>Telefon (€)</label><input id="q-ph" type="number" inputmode="decimal">
+ <div class="row"><div><label>Dönüş parsiyel sayısı</label><input id="q-pd" type="number" inputmode="numeric"></div><div><label>Dönüş birim ücret (€)</label><input id="q-pdu" type="number" inputmode="decimal" placeholder="boşsa adres ücreti"></div></div></div>
+ <div class="grid" id="par-sum"></div>`;
+}
+const PK=['pa','pu','ph','pd','pdu'];
+function parCalc(t){
+ const n=num(t.pa),adr=n*num(t.pu);
+ const ru=(t.pdu===''||t.pdu==null)?num(t.pu):num(t.pdu),ret=num(t.pd)*ru,ph=num(t.ph);
+ return{n,adr,ret,ph,tot:adr+ret+ph,ru};
+}
+function drawPar(){
+ const t=T(),c=parCalc(t);
+ const card=(l,v,cls,span)=>`<div class="card" ${span?'style="grid-column:1/3"':''}><div class="lab">${l}</div><div class="big ${cls}"><span>${f(v)}</span><u>€</u></div></div>`;
+ $('par-sum').innerHTML=card('Adres ('+c.n+' × '+f(num(t.pu),0)+')',c.adr,'blue')+card('Dönüş ('+num(t.pd)+' × '+f(c.ru,0)+')',c.ret,'blue')+card('Telefon',c.ph,'or')+card('Toplam',c.tot,'gr');
+}
+function fillPar(){const t=T();PK.forEach(k=>$('q-'+k).value=t[k]??'')}
+shellPar();
+PK.forEach(k=>$('q-'+k).oninput=e=>{T()[k]=e.target.value;save();drawPar()});
+
+['rota','hT','hP','av'].forEach(k=>$(k).oninput=e=>{T()[k]=e.target.value;save();drawAcc()});
+$('tsel').onchange=e=>{S.tcur=e.target.value;save();fillTrip();drawAcc()};
+$('dt').onclick=()=>{const sn=snap();if(S.trips.length>1){S.trips=S.trips.filter(t=>t.id!=S.tcur);S.tcur=S.trips[0].id}else{const t=newTrip();t.id=T().id;S.trips[0]=t}save();fillTrip();drawAcc();toast('Sefer silindi.',sn)};
+$('nt').onclick=()=>{const t=newTrip();S.trips.push(t);S.tcur=t.id;save();fillTrip();drawAcc()};
+function subtab(n){$('paneTL').hidden=n!=1;$('paneEUR').hidden=n!=2;$('panePAR').hidden=n!=3;[1,2,3].forEach(i=>$('st'+i).classList.toggle('on',n==i))}
+$('st1').onclick=()=>subtab(1);$('st2').onclick=()=>subtab(2);$('st3').onclick=()=>subtab(3);
+$('p2').addEventListener('click',e=>{
+ const c=e.target.dataset.add;
+ if(c){
+  const a=parseFloat($(c+'-a').value);
+  if(!(a>0)){alert('Tutarı gir.');return}
+  T().exp.push({id:Date.now(),d:$(c+'-d').value,cat:$(c+'-c').value,a,cur:c,tip:$(c+'-t').value,u:c=='EUR'?$('EUR-u').value.trim().toUpperCase():'',n:$(c+'-n').value.trim()});
+  save();$(c+'-a').value=$(c+'-n').value='';if(c=='EUR')$('EUR-u').value='';drawAcc();return;
+ }
+ const i=e.target.dataset.x;
+ if(i){const sn=snap(),t=T();t.exp=t.exp.filter(x=>x.id!=i);save();drawAcc();toast('Gider silindi.',sn)}
+});
+
+const KEY='ak';
+const getKey=()=>{try{return localStorage.getItem(KEY)||''}catch(e){return ''}};
+$('akey').value=getKey();
+$('akey').onchange=()=>{try{localStorage.setItem(KEY,$('akey').value.trim())}catch(e){}$('akst').textContent=$('akey').value.trim()?'Anahtar bu telefonda kaydedildi.':'Anahtar silindi.'};
+const fd2=d=>d.split('-').reverse().join('.');
+const RC_PROMPT=()=>'Bu bir harcama fişi fotoğrafı (yakıt dışı: yol/köprü ücreti, yemek, park, tamir vb.). Fişi oku ve SADECE şu JSON nesnesini döndür: {"tarih":"YYYY-MM-DD","ulke":"2 harfli ülke kodu, örn DE NL BE AT TR","tutar":ödenen toplam tutar sayı olarak,"para":"ISO para kodu, örn EUR TRY","kategori":"Yol / Köprü, Yemek, Park, Tamir, Diğer değerlerinden biri","isyeri":"işletme adı"}. Okuyamadığın alanı null yap. Tarih gün.ay.yıl formatında olabilir. Bugün '+today()+'.';
+function shrink(file,max){max=max||1600;return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?res(b):rej(new Error('img')),'image/jpeg',0.85)};img.onerror=()=>rej(new Error('img'));img.src=u})}
+const b64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob)});
+const pj=t=>{const m=String(t).match(/\{[\s\S]*\}/);return JSON.parse(m?m[0]:t)};
+async function viaAPI(file){
+ const blob=await shrink(file),data=await b64(blob);
+ const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':getKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-5-5',max_tokens:400,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data}},{type:'text',text:RC_PROMPT()}]}]})});
+ if(!r.ok){const e=new Error('api');e.status=r.status;throw e}
+ const j=await r.json();return pj((j.content||[]).map(x=>x.text||'').join(''));
+}
+async function viaClaude(file){
+ if(!(window.claude&&claude.use))return null;
+ const sm=await claude.use('sample');if(!sm)return null;
+ return await sm.json(RC_PROMPT(),{images:[file]});
+}
+function num2(x){x=x.replace(/\s/g,'');if(/,\d{2}$/.test(x))x=x.replace(/\./g,'').replace(',','.');else x=x.replace(/,/g,'');return parseFloat(x)}
+function parseOCR(t){
+ let tarih=null;const m=t.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
+ if(m){let y=+m[3];if(y<100)y+=2000;if(+m[2]>=1&&+m[2]<=12&&+m[1]>=1&&+m[1]<=31)tarih=y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0')}
+ const para=/€|EUR/i.test(t)?'EUR':(/₺|\bTL\b|TRY/i.test(t)?'TRY':null);
+ const rx=/\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[.,]\d{2}/g;
+ let c=[];t.split('\n').forEach(l=>{if(/total|summe|gesamt|betrag|toplam|totaal|te betalen|zu zahlen|brutto/i.test(l))(l.match(rx)||[]).forEach(v=>c.push(num2(v)))});
+ if(!c.length)(t.match(rx)||[]).forEach(v=>c.push(num2(v)));
+ c=c.filter(v=>v>0&&v<10000);
+ const tutar=c.length?Math.max(...c):null;
+ const ulke=/GmbH|Deutschland|\bDE\s?\d/i.test(t)?'DE':/\bB\.?V\.?\b|Nederland/i.test(t)?'NL':/Belgi|Belgique|\bBE\s?\d/i.test(t)?'BE':/Österreich|\bAT\s?U/i.test(t)?'AT':/Magyar|\bKft\b/i.test(t)?'HU':'';
+ return{tarih,ulke,tutar,para,kategori:'Diğer',isyeri:''};
+}
+async function viaOCR(file){
+ if(!window.Tesseract)await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+ const blob=await shrink(file,2000);
+ const res=await Tesseract.recognize(blob,'eng+tur');
+ return parseOCR(res.data.text||'');
+}
+async function readReceipt(file,c){
+ const st=$(c+'-rc');
+ st.textContent='Fiş okunuyor...';
+ try{
+  let r,ocr=false;
+  if(getKey())r=await viaAPI(file);
+  else{r=await viaClaude(file);if(!r){r=await viaOCR(file);ocr=true}}
+  const a=parseFloat(String(r.tutar).replace(',','.'));
+  const pk=String(r.para||'').toUpperCase();
+  let cur=pk=='EUR'?'EUR':(pk=='TRY'||pk=='TL')?'TL':null;
+  if(!cur&&ocr)cur=c;
+  if(!(a>0)||!cur){st.textContent='Fişten tutar veya para birimi (EUR/TL) okunamadı'+(pk&&!cur?' ('+pk+')':'')+'. Elle gir.';return}
+  const d=/^\d{4}-\d{2}-\d{2}$/.test(r.tarih||'')?r.tarih:today();
+  const cat=CATS.includes(r.kategori)?r.kategori:'Diğer';
+  const u=cur=='EUR'?String(r.ulke||'').toUpperCase().slice(0,2):'';
+  subtab(cur=='EUR'?2:1);
+  if(ocr){
+   $(cur+'-d').value=d;$(cur+'-c').value=cat;$(cur+'-a').value=a;$(cur+'-t').value='Fişli';if(cur=='EUR')$('EUR-u').value=u;
+   $(cur+'-rc').textContent='Ücretsiz okuma yaptı, hatalı olabilir: '+fd2(d)+' · '+f(a)+' '+SYM[cur]+(u?' · '+u:'')+'. Kontrol edip "Gideri kaydet"e bas.';return;
+  }
+  T().exp.push({id:Date.now(),d,cat,a,cur,tip:'Fişli',u,n:r.isyeri||''});
+  save();drawAcc();
+  $(cur+'-rc').textContent='Eklendi: '+fd2(d)+' · '+cat+' · '+f(a)+' '+SYM[cur]+(u?' · '+u:'')+' · Fişli. Yanlışsa listeden ✕ ile sil.';
+ }catch(e){
+  st.textContent=e&&e.status==401?'API anahtarı geçersiz.':e&&e.status==429?'Kullanım sınırı doldu, biraz sonra tekrar dene.':'Fiş okunamadı, daha net çekip tekrar dene.';
+ }
+}
+$('p2').addEventListener('change',e=>{const c=e.target.dataset.rc,fl=e.target.files&&e.target.files[0];if(c&&fl){e.target.value='';readReceipt(fl,c)}});
+$('rp').onclick=()=>{
+ const t=T(),tl=sumCur(t,'TL'),eu=sumCur(t,'EUR');
+ const line=x=>'  '+x.d+' | '+x.cat+' | '+(x.tip||'Nakit')+(x.u?' | '+x.u:'')+' | '+f(x.a)+(x.n?' | '+x.n:'');const pc=parCalc(t);
+ const L=['SEFER: '+(t.rota||'-'),'',
+  'TÜRKİYE MASRAFI (TL)','Avans: '+f(num(t.av))+' TL | Harcanan: '+f(tl)+' TL | Kalan: '+f(num(t.av)-tl)+' TL',...t.exp.filter(x=>x.cur=='TL').map(line),'',
+  'HARCIRAH (EUR)','Toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Harcanan: '+f(eu)+' EUR','Elde kalan: '+f(num(t.hP)-eu)+' EUR | Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR','Parsiyel alacak: '+f(pc.adr+pc.ret)+' | Telefon alacak: '+f(pc.ph)+' | Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.adr+pc.ret+pc.ph)+' EUR','Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.adr+pc.ret+pc.ph)+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'','PARSİYEL (EUR)','Adres: '+pc.n+' x '+f(num(t.pu))+' = '+f(pc.adr)+' | Dönüş: '+num(t.pd)+' x '+f(pc.ru)+' = '+f(pc.ret),'Telefon: '+f(pc.ph)+' | Toplam alacak: '+f(pc.tot)+' EUR'];
+ $('rt').value=L.join('\n');$('rt').hidden=false;$('rt').select();
+};
+drawAll();fillTrip();drawAcc();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
