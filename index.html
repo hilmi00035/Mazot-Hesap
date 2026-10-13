@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Mazot & Hesap</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#0b1220;--card:#111a2e;--ink:#e8edf7;--mut:#8b97ad;--acc:#3b82f6;--line:#1f2b46;--bad:#f87171;--or:#f5a524;--gr:#22c78a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0 auto;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:560px;padding:12px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;padding:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;font:600 16px inherit;font-family:inherit}
+.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.grid .card{margin:0}
+.lab{color:var(--mut);font-weight:700;letter-spacing:.06em;font-size:13px;text-transform:uppercase;margin-bottom:6px}
+.big{display:flex;align-items:baseline;gap:6px;font-weight:800;font-size:30px}
+.big input{width:100%;min-width:0;background:none;border:0;padding:0;font:inherit;color:inherit;outline:none}
+.big u{text-decoration:none;font-size:22px}
+.blue{color:var(--acc)}.or{color:var(--or)}.gr{color:var(--gr)}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 3px}
+input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:16px inherit;font-family:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.add{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--acc);color:#fff;font:600 16px inherit;font-family:inherit}
+.ghost{background:none;border:1px solid var(--line);color:var(--ink);padding:9px 12px;border-radius:10px;font:15px inherit;font-family:inherit;margin-top:8px}
+.item{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border:0}
+.item small{display:block;color:var(--mut)}
+.item button{border:0;background:none;color:var(--bad);font-size:18px}
+.in{color:var(--gr)}.out{color:var(--bad)}
+.empty{color:var(--mut);text-align:center;padding:10px}
+.sum{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sum b{display:block;font-size:24px}.sum span{color:var(--mut);font-size:13px}
+.mut{color:var(--mut);font-size:13px;line-height:1.7;display:block;margin-top:6px}.mut b.in{color:var(--gr)}.mut b.out{color:var(--bad)}
+#toast{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:536px;margin:auto;background:#e8edf7;color:#0b1220;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;z-index:9;font-weight:600}#toast[hidden]{display:none}#toast button{border:0;background:#0b1220;color:#fff;border-radius:8px;padding:8px 12px;font:600 15px inherit;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="tabs"><button id="t1" class="on">Mazot</button><button id="t2">Hesap</button></div>
+
+<section id="p1">
+ <div class="card">
+  <select id="prof"></select>
+  <div class="row"><div><label>Çekici plakası</label><input id="pc" autocapitalize="characters"></div><div><label>Dorse plakası</label><input id="pd" autocapitalize="characters"></div></div>
+  <div class="row"><div><label>Başlangıç tarihi</label><input type="date" id="d1"></div><div><label>Bitiş tarihi</label><input type="date" id="d2"></div></div>
+  <button class="ghost" id="np">+ Yeni araç profili</button> <button class="ghost" id="dp" style="color:var(--bad)">Profili sil</button>
+ </div>
+ <div class="grid">
+  <div class="card"><div class="lab">Çıkış kilometresi</div><div class="big blue"><input id="k1" type="number" inputmode="numeric" placeholder="0"><u>KM</u></div></div>
+  <div class="card"><div class="lab">Çıkış mazot</div><div class="big or"><input id="l1" type="number" inputmode="decimal" placeholder="0"><u>L</u></div></div>
+  <div class="card"><div class="lab">Şu anki / dönüş km</div><div class="big blue"><input id="kn" type="number" inputmode="numeric" placeholder="0"><u>KM</u></div></div>
+  <div class="card"><div class="lab">Gidilen yol</div><div class="big blue"><span id="yol">0</span><u>KM</u></div></div>
+  <div class="card"><div class="lab">Toplam mazot</div><div class="big or"><span id="tot">0</span><u>L</u></div></div>
+  <div class="card"><div class="lab">Kalan mazot</div><div class="big gr"><span id="kal">0</span><u>L</u></div>
+   <label>Tüketim:</label><select id="rate"></select>
+   <button class="ghost" id="rd">Düzenle</button></div>
+ </div>
+ <div class="card"><div class="lab">Alınan mazot</div><div id="buys"></div><button class="ghost" id="ab">+ Mazot alımı ekle</button>
+  <label>Depodaki gerçek mazot (dönüşte, isteğe bağlı)</label><input type="number" id="real" inputmode="decimal">
+  <div id="gercek" class="lab" style="margin-top:10px"></div>
+  <button class="add" id="fa">Seferi kaydet</button></div>
+ <div class="card" id="fl-list"></div>
+</section>
+
+<section id="p2" hidden>
+ <div class="card">
+  <select id="tsel"></select>
+  <label>Rota / sefer adı</label><input id="rota" placeholder="Almanya, Hollanda, Belçika">
+  <div class="row"><div><label>Harcırah toplam (€)</label><input type="number" id="hT" inputmode="decimal"></div><div><label>Peşin alınan (€)</label><input type="number" id="hP" inputmode="decimal"></div></div>
+  <label>Avans (TL)</label><input type="number" id="av" inputmode="decimal">
+  <button class="ghost" id="nt">+ Yeni sefer</button> <button class="ghost" id="dt" style="color:var(--bad)">Seferi sil</button>
+ </div>
+ <div class="tabs"><button id="st1" class="on">₺ Türkiye</button><button id="st2">€ Harcırah</button><button id="st3">Parsiyel</button></div>
+ <div id="paneTL"></div>
+ <div id="paneEUR" hidden></div>
+ <div id="panePAR" hidden></div>
+ <div class="card"><button class="ghost" id="rp" style="margin:0;width:100%">Sefer raporu</button><textarea id="rt" hidden readonly style="width:100%;height:240px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:14px/1.4 ui-monospace,monospace"></textarea></div>
+ <div class="card"><div class="lab">Fiş okuma ayarı</div>
+  <label>Claude API anahtarı (isteğe bağlı)</label><input id="akey" type="password" autocomplete="off" placeholder="sk-ant-...">
+  <small class="mut">Anahtar varsa fiş Claude ile okunur, tarih ve tutar çok daha doğru çıkar. Anahtar sadece bu telefonda saklanır. Boş bırakırsan ücretsiz okuma kullanılır, sonucu kontrol edip kaydedersin.</small>
+  <div id="akst" class="mut"></div></div>
+</section>
+
+<div id="toast" hidden></div>
+<script>
+const $=id=>document.getElementById(id);
+const f=(n,d=2)=>Number(n).toLocaleString('tr-TR',{maximumFractionDigits:d,minimumFractionDigits:d});
+const f0=n=>f(n,0);
+let S={profiles:[],cur:null,hist:[],acc:[]};
+try{S=Object.assign(S,JSON.parse(localStorage.getItem('mh3')||'{}'))}catch(e){}
+if(!S.profiles.length){let acc=[];try{acc=(JSON.parse(localStorage.getItem('mh2')||'{}').acc)||[]}catch(e){}
+ if(!S.acc.length)S.acc=acc;
+ S.profiles.push(np());S.cur=S.profiles[0].id}
+function np(){return{id:Date.now()+Math.random(),pc:'',pd:'',k1:'',l1:'',kn:'',buys:[],rate:32,real:'',d1:today(),d2:today()}}
+function today(){return new Date().toISOString().slice(0,10)}
+const save=()=>{try{localStorage.setItem('mh3',JSON.stringify(S))}catch(e){}};
+let tt=null;
+const snap=()=>JSON.stringify(S);
+function toast(msg,sn){
+ $('toast').innerHTML='<span>'+msg+'</span><button id="undo">Geri al</button>';$('toast').hidden=false;
+ $('undo').onclick=()=>{S=JSON.parse(sn);save();fillTrip();drawAll();drawAcc();$('toast').hidden=true};
+ clearTimeout(tt);tt=setTimeout(()=>{$('toast').hidden=true},8000);
+}
+const P=()=>S.profiles.find(p=>p.id==S.cur)||S.profiles[0];
+function tab(n){$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('t1').classList.toggle('on',n==1);$('t2').classList.toggle('on',n==2)}
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+
+function num(v){const n=parseFloat(v);return isNaN(n)?0:n}
+function calc(p){
+ const yol=Math.max(0,num(p.kn)-num(p.k1));
+ const tot=num(p.l1)+p.buys.reduce((s,b)=>s+num(b.l),0);
+ const kal=tot-yol*p.rate/100;
+ return{yol,tot,kal};
+}
+function drawProf(){
+ $('prof').innerHTML=S.profiles.map(p=>`<option value="${p.id}">🚛 ${(p.pc||'Plaka yok')+(p.pd?' / '+p.pd:'')}</option>`).join('');
+ $('prof').value=P().id;
+}
+function drawRate(p){
+ const r=[];for(let i=24;i<=45;i++)r.push(i);if(!r.includes(p.rate))r.push(p.rate);r.sort((a,b)=>a-b);
+ $('rate').innerHTML=r.map(x=>`<option ${x==p.rate?'selected':''} value="${x}">${f(x,x%1?1:0)} L/100km</option>`).join('');
+}
+function drawBuys(p){
+ $('buys').innerHTML=p.buys.map((b,i)=>`<div class="row" style="margin-bottom:6px;grid-template-columns:1fr 1fr 40px"><input data-i="${i}" data-k="l" type="number" inputmode="decimal" placeholder="Litre" value="${b.l}"><input data-i="${i}" data-k="u" placeholder="Ülke" value="${b.u||''}"><button data-bd="${i}" style="border:0;background:none;color:var(--bad);font-size:18px">✕</button></div>`).join('')||'<div class="empty">Henüz alım yok.</div>';
+}
+function drawCalc(){
+ const p=P(),c=calc(p);
+ $('yol').textContent=f0(c.yol);$('tot').textContent=f0(c.tot);
+ $('kal').textContent=f0(c.kal);$('kal').parentElement.className='big '+(c.kal<0?'':'gr');
+ $('gercek').textContent=(c.yol>0&&p.real!=='')?'Gerçek tüketim: '+f((c.tot-num(p.real))/c.yol*100,1)+' L/100 km':'';
+}
+function drawAll(){
+ const p=P();drawProf();
+ ['pc','pd','d1','d2','k1','l1','kn','real'].forEach(k=>$(k).value=p[k]??'');
+ drawRate(p);drawBuys(p);drawCalc();drawHist();
+}
+function drawHist(){
+ $('fl-list').innerHTML=S.hist.length?[...S.hist].reverse().map(x=>`<div class="item"><div><b>${x.d1} → ${x.d2||'?'}</b><small>${x.pc} / ${x.pd}</small><small>${f0(x.k1)} → ${f0(x.kn)} km · ${f0(x.yol)} km</small><small>Çıkış ${f0(x.l1)} L · Alım: ${x.buys.length?x.buys.map(b=>f0(b.l)+' L '+(b.u||'')).join(', '):'yok'}${x.real!==''?' · Dönüş '+f0(x.real)+' L':''}</small></div><div style="text-align:right">${x.avg!=null?'<b class="or">'+f(x.avg,1)+'</b><small>L/100</small>':''}<button data-h="${x.id}">✕</button></div></div>`).join(''):'<div class="empty">Kayıtlı sefer yok.</div>';
+}
+['pc','pd','d1','d2','k1','l1','kn','real'].forEach(k=>$(k).oninput=e=>{
+ const p=P();p[k]=(k=='pc'||k=='pd')?e.target.value.toUpperCase():e.target.value;save();drawCalc();
+ if(k=='pc'||k=='pd'){const pos=e.target.selectionStart;drawProf();e.target.setSelectionRange(pos,pos)}
+});
+$('prof').onchange=e=>{S.cur=e.target.value;save();drawAll()};
+$('dp').onclick=()=>{const sn=snap();if(S.profiles.length>1){S.profiles=S.profiles.filter(p=>p.id!=S.cur);S.cur=S.profiles[0].id}else{Object.assign(P(),np(),{id:P().id})}save();drawAll();toast('Profil silindi.',sn)};
+$('np').onclick=()=>{const p=np();S.profiles.push(p);S.cur=p.id;save();drawAll()};
+$('rate').onchange=e=>{P().rate=num(e.target.value);save();drawCalc()};
+$('rd').onclick=()=>{
+ if($('rate-ed'))return;
+ const i=document.createEl
