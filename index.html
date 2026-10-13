@@ -39,6 +39,14 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 .sum{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sum b{display:block;font-size:24px}.sum span{color:var(--mut);font-size:13px}
 .mut{color:var(--mut);font-size:13px;line-height:1.7;display:block;margin-top:6px}.mut b.in{color:var(--gr)}.mut b.out{color:var(--bad)}
 #toast{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:536px;margin:auto;background:#e8edf7;color:#0b1220;border-radius:12px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px;z-index:9;font-weight:600}#toast[hidden]{display:none}#toast button{border:0;background:#0b1220;color:#fff;border-radius:8px;padding:8px 12px;font:600 15px inherit;font-family:inherit}
+#rview{position:fixed;inset:0;background:#fff;color:#000;overflow:auto;z-index:20;padding:16px;font:14px/1.45 system-ui,sans-serif}
+#rview[hidden]{display:none}
+#rview h2{margin:6px 0}#rview h3{margin:14px 0 4px}
+#rview table{width:100%;border-collapse:collapse;margin:6px 0 10px}
+#rview th,#rview td{border:1px solid #999;padding:4px 6px;text-align:left;font-size:13px}
+#rview .bar{display:flex;gap:8px;margin-bottom:12px}
+#rview .bar button{flex:1;padding:12px;border-radius:10px;border:1px solid #333;background:#eee;color:#000;font:600 15px inherit;font-family:inherit}
+@media print{body>*:not(#rview){display:none!important}#rview{position:static;padding:0}#rview .bar{display:none}}
 </style>
 </head>
 <body>
@@ -84,10 +92,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
  <div class="card"><div class="lab">Fiş okuma ayarı</div>
   <label>Claude API anahtarı (isteğe bağlı)</label><input id="akey" type="password" autocomplete="off" placeholder="sk-ant-...">
   <small class="mut">Anahtar varsa fiş Claude ile okunur, tarih ve tutar çok daha doğru çıkar. Anahtar sadece bu telefonda saklanır. Boş bırakırsan ücretsiz okuma kullanılır, sonucu kontrol edip kaydedersin.</small>
+  <label class="ghost" style="display:inline-block">Yedekten yükle<input type="file" accept="application/json,.json" id="rs" style="display:none"></label> <button class="ghost" id="bk">Yedek al</button>
   <button class="ghost" id="prep">Çevrimdışı fiş okumayı hazırla</button>
   <div id="akst" class="mut"></div></div>
 </section>
 
+<div id="rview" hidden></div>
 <div id="toast" hidden></div>
 <script>
 const $=id=>document.getElementById(id);
@@ -367,14 +377,40 @@ async function prepOCR(){
 }
 $('prep').onclick=prepOCR;
 $('p2').addEventListener('change',e=>{const c=e.target.dataset.rc,fl=e.target.files&&e.target.files[0];if(c&&fl){e.target.value='';readReceipt(fl,c)}});
-$('rp').onclick=()=>{
- const t=T(),tl=sumCur(t,'TL'),eu=sumCur(t,'EUR');
- const line=x=>'  '+x.d+' | '+x.cat+' | '+(x.tip||'Nakit')+(x.u?' | '+x.u:'')+' | '+f(x.a)+(x.n?' | '+x.n:'');const pc=parCalc(t);
- const L=['SEFER: '+(t.rota||'-'),'',
+const esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function repText(t){
+ const tl=sumCur(t,'TL'),eu=sumCur(t,'EUR'),pc=parCalc(t);
+ const line=x=>'  '+x.d+' | '+x.cat+' | '+(x.tip||'Nakit')+(x.u?' | '+x.u:'')+' | '+f(x.a)+(x.n?' | '+x.n:'');
+ return ['SEFER: '+(t.rota||'-'),'',
   'TÜRKİYE MASRAFI (TL)','Avans: '+f(num(t.av))+' TL | Harcanan: '+f(tl)+' TL | Kalan: '+f(num(t.av)-tl)+' TL',...t.exp.filter(x=>x.cur=='TL').map(line),'',
-  'HARCIRAH (EUR)','Toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Harcanan: '+f(eu)+' EUR','Elde kalan: '+f(num(t.hP)-eu)+' EUR | Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR','Parsiyel alacak: '+f(pc.adr+pc.ret)+' | Telefon alacak: '+f(pc.ph)+' | Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.adr+pc.ret+pc.ph)+' EUR','Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.adr+pc.ret+pc.ph)+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'','PARSİYEL (EUR)','Adres: '+pc.n+' x '+f(num(t.pu))+' = '+f(pc.adr)+' | Dönüş: '+num(t.pd)+' x '+f(pc.ru)+' = '+f(pc.ret),'Telefon: '+f(pc.ph)+' | Toplam alacak: '+f(pc.tot)+' EUR'];
- $('rt').value=L.join('\n');$('rt').hidden=false;$('rt').select();
-};
+  'HARCIRAH (EUR)','Toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Harcanan: '+f(eu)+' EUR','Elde kalan: '+f(num(t.hP)-eu)+' EUR | Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'',
+  'PARSİYEL (EUR)','Adres: '+pc.n+' x '+f(num(t.pu))+' = '+f(pc.adr)+' | Dönüş: '+num(t.pd)+' x '+f(pc.ru)+' = '+f(pc.ret),'Telefon: '+f(pc.ph)+' | Toplam alacak: '+f(pc.tot)+' EUR','',
+  'Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.tot)+' EUR','Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.tot)+' EUR'].join('\n');
+}
+function openReport(){
+ const t=T(),tl=sumCur(t,'TL'),eu=sumCur(t,'EUR'),pc=parCalc(t);
+ const rows=cur=>{
+  const L=t.exp.filter(x=>x.cur==cur).sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:((x.tip||'Nakit')==(y.tip||'Nakit')?x.id-y.id:((x.tip||'Nakit')=='Nakit'?-1:1)));
+  const e=cur=='EUR';
+  return L.length?'<table><tr><th>Tarih</th><th>Kategori</th><th>Tür</th>'+(e?'<th>Ülke</th>':'')+'<th>Not</th><th>Tutar</th></tr>'+L.map(x=>'<tr><td>'+fd2(x.d)+'</td><td>'+esc(x.cat)+'</td><td>'+(x.tip||'Nakit')+'</td>'+(e?'<td>'+esc(x.u)+'</td>':'')+'<td>'+esc(x.n)+'</td><td style="text-align:right">'+f(x.a)+' '+SYM[cur]+'</td></tr>').join('')+'<tr><th colspan="'+(e?5:4)+'" style="text-align:right">Toplam</th><th style="text-align:right">'+f(e?eu:tl)+' '+SYM[cur]+'</th></tr></table>':'<p>Kayıt yok.</p>';
+ };
+ $('rview').innerHTML='<div class="bar"><button id="rv-pr">Yazdır / PDF</button><button id="rv-sh">Paylaş / Kopyala</button><button id="rv-x">Kapat</button></div>'+
+  '<h2>Sefer Raporu: '+esc(t.rota||'-')+'</h2><p>Rapor tarihi: '+fd2(today())+'</p>'+
+  '<h3>Türkiye masrafı (TL)</h3><p>Avans: '+f(num(t.av))+' ₺ · Harcanan: '+f(tl)+' ₺ · Kalan: '+f(num(t.av)-tl)+' ₺</p>'+rows('TL')+
+  '<h3>Harcırah giderleri (EUR)</h3><p>Toplam: '+f(num(t.hT))+' € · Peşin alınan: '+f(num(t.hP))+' € · Harcanan: '+f(eu)+' € · Elde kalan: '+f(num(t.hP)-eu)+' €</p>'+rows('EUR')+
+  '<h3>Parsiyel ve telefon (EUR)</h3><p>Adres: '+pc.n+' × '+f(num(t.pu))+' = '+f(pc.adr)+' € · Dönüş: '+num(t.pd)+' × '+f(pc.ru)+' = '+f(pc.ret)+' € · Telefon: '+f(pc.ph)+' € · Toplam: '+f(pc.tot)+' €</p>'+
+  '<h3>Özet</h3><p>Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br><b>Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.tot)+' €</b><br>Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.tot)+' €</p>';
+ $('rview').hidden=false;$('rview').scrollTop=0;
+ $('rv-x').onclick=()=>{$('rview').hidden=true};
+ $('rv-pr').onclick=()=>window.print();
+ $('rv-sh').onclick=()=>{const tx=repText(t);
+  if(navigator.share)navigator.share({title:'Sefer raporu',text:tx}).catch(()=>{});
+  else if(navigator.clipboard)navigator.clipboard.writeText(tx).then(()=>alert('Rapor kopyalandı.'),()=>alert('Kopyalanamadı.'));
+ };
+}
+$('rp').onclick=openReport;
+$('bk').onclick=()=>{const b=new Blob([JSON.stringify(S)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mazot-yedek-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000);$('akst').textContent='Yedek dosyası indirildi.'};
+$('rs').onchange=e=>{const fl=e.target.files[0];e.target.value='';if(!fl)return;const r=new FileReader();r.onload=()=>{try{const sn=snap();const d=JSON.parse(r.result);if(!d.profiles||!d.profiles.length||!d.trips)throw 0;S=d;save();fillTrip();drawAll();drawAcc();toast('Yedek yüklendi.',sn)}catch(x){alert('Yedek dosyası okunamadı.')}};r.readAsText(fl)};
 drawAll();fillTrip();drawAcc();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
