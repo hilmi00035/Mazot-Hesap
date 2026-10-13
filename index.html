@@ -84,6 +84,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
  <div class="card"><div class="lab">Fiş okuma ayarı</div>
   <label>Claude API anahtarı (isteğe bağlı)</label><input id="akey" type="password" autocomplete="off" placeholder="sk-ant-...">
   <small class="mut">Anahtar varsa fiş Claude ile okunur, tarih ve tutar çok daha doğru çıkar. Anahtar sadece bu telefonda saklanır. Boş bırakırsan ücretsiz okuma kullanılır, sonucu kontrol edip kaydedersin.</small>
+  <button class="ghost" id="prep">Çevrimdışı fiş okumayı hazırla</button>
   <div id="akst" class="mut"></div></div>
 </section>
 
@@ -260,7 +261,7 @@ const getKey=()=>{try{return localStorage.getItem(KEY)||''}catch(e){return ''}};
 $('akey').value=getKey();
 $('akey').onchange=()=>{try{localStorage.setItem(KEY,$('akey').value.trim())}catch(e){}$('akst').textContent=$('akey').value.trim()?'Anahtar bu telefonda kaydedildi.':'Anahtar silindi.'};
 const fd2=d=>d.split('-').reverse().join('.');
-const RC_PROMPT=()=>'Bu bir harcama fişi fotoğrafı (yakıt dışı: yol/köprü ücreti, yemek, park, tamir vb.). Fişi oku ve SADECE şu JSON nesnesini döndür: {"tarih":"YYYY-MM-DD","ulke":"2 harfli ülke kodu, örn DE NL BE AT TR","tutar":ödenen toplam tutar sayı olarak,"para":"ISO para kodu, örn EUR TRY","kategori":"Yol / Köprü, Yemek, Park, Tamir, Diğer değerlerinden biri","isyeri":"işletme adı"}. Okuyamadığın alanı null yap. Tarih gün.ay.yıl formatında olabilir. Bugün '+today()+'.';
+const RC_PROMPT=()=>'Bu, Avrupa yolundaki bir TIR soforunun aldigi harcama fisinin fotografi. Fis Turkce olmayabilir (Romence, Sirpca, Cekce, Macarca, Bulgarca, Almanca vb.). Fisi oku ve SADECE su JSON nesnesini dondur: {"tarih":"YYYY-MM-DD","ulke":"2 harfli ulke kodu","tutar_eur":"fiste yazan EURO karsiligi (toplam) sayi olarak, fiste euro yoksa null","tutar_yerel":"yerel para birimindeki toplam sayi","para_yerel":"ISO kodu, ornek TRY RON RSD CZK HUF EUR","kategori":"Yol / Köprü, Yemek, Park, Tamir, Diğer degerlerinden biri","aciklama":"fisin ne icin verildigini Turkce ve cok kisa yaz, ornek: Macaristan otoyol e-vinyeti, kopru gecis ucreti, otopark, restoran","isyeri":"isletme adi"}. Fiste hem yerel para hem euro karsiligi varsa tutar_eur alanina fiste yazan euro tutarini yaz, kendin cevirme yapma. Otoyol, kopru, tunel, vinyet ve e-vinyet (rovinieta, matrica, dalnicni znamka, putarina, Maut, peaj) fisleri Yol / Köprü kategorisindedir. Turkiye fislerinde para birimi TRY olur. Okuyamadigin alani null yap. Tarih gun.ay.yil formatinda olabilir. Bugun '+today()+'.';
 function shrink(file,max){max=max||1600;return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);c.toBlob(b=>b?res(b):rej(new Error('img')),'image/jpeg',0.85)};img.onerror=()=>rej(new Error('img'));img.src=u})}
 const b64=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob)});
 const pj=t=>{const m=String(t).match(/\{[\s\S]*\}/);return JSON.parse(m?m[0]:t)};
@@ -277,16 +278,30 @@ async function viaClaude(file){
 }
 function num2(x){x=x.replace(/\s/g,'');if(/,\d{2}$/.test(x))x=x.replace(/\./g,'').replace(',','.');else x=x.replace(/,/g,'');return parseFloat(x)}
 function parseOCR(t){
- let tarih=null;const m=t.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
+ let tarih=null;const m0=t.match(/(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})(?!\d)/);
+ if(m0&&+m0[2]>=1&&+m0[2]<=12&&+m0[3]>=1&&+m0[3]<=31)tarih=m0[1]+'-'+String(m0[2]).padStart(2,'0')+'-'+String(m0[3]).padStart(2,'0');
+ const m=tarih?null:t.match(/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
  if(m){let y=+m[3];if(y<100)y+=2000;if(+m[2]>=1&&+m[2]<=12&&+m[1]>=1&&+m[1]<=31)tarih=y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0')}
- const para=/€|EUR/i.test(t)?'EUR':(/₺|\bTL\b|TRY/i.test(t)?'TRY':null);
  const rx=/\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}|\d+[.,]\d{2}/g;
- let c=[];t.split('\n').forEach(l=>{if(/total|summe|gesamt|betrag|toplam|totaal|te betalen|zu zahlen|brutto/i.test(l))(l.match(rx)||[]).forEach(v=>c.push(num2(v)))});
- if(!c.length)(t.match(rx)||[]).forEach(v=>c.push(num2(v)));
- c=c.filter(v=>v>0&&v<10000);
- const tutar=c.length?Math.max(...c):null;
- const ulke=/GmbH|Deutschland|\bDE\s?\d/i.test(t)?'DE':/\bB\.?V\.?\b|Nederland/i.test(t)?'NL':/Belgi|Belgique|\bBE\s?\d/i.test(t)?'BE':/Österreich|\bAT\s?U/i.test(t)?'AT':/Magyar|\bKft\b/i.test(t)?'HU':'';
- return{tarih,ulke,tutar,para,kategori:'Diğer',isyeri:''};
+ const sc=re=>(t.match(re)||[]).length;
+ const trS=sc(/₺|\bTL\b|\bTRY\b|KDV|TOPKDV|TOPLAM|L[Tİ]D|ŞT[Iİ]|A\.?Ş|F[Iİ][ŞS]\s?N[Oo]|T[Aİ]R[Iİ]H|T[ÜU]RK/gi);
+ const er=/(\d[\d.,\s]*[.,]\d{2})\s*(?:€|EUR)|(?:€|EUR)\s*(\d[\d.,\s]*[.,]\d{2})/gi;
+ const ev=[];let q;while((q=er.exec(t))){const v=num2(q[1]||q[2]);if(v>0&&v<10000)ev.push(v)}
+ const lm=/\b(RON|LEI|RSD|CZK|HUF|BGN)\b|Kč|\bFt\b|лв|\bdin\b/i.exec(t);
+ const locCode=lm?({'LEI':'RON','KČ':'CZK','FT':'HUF','ЛВ':'BGN','DIN':'RSD'}[lm[0].toUpperCase()]||lm[0].toUpperCase()):null;
+ let tot=[];t.split('\n').forEach(l=>{if(/total|summe|gesamt|betrag|toplam|totaal|te betalen|zu zahlen|brutto|suma|celkem|összesen|osszesen|ukupno|общо/i.test(l))(l.match(rx)||[]).forEach(v=>tot.push(num2(v)))});
+ if(!tot.length)(t.match(rx)||[]).forEach(v=>tot.push(num2(v)));
+ tot=tot.filter(v=>v>0&&v<10000000);
+ const totMax=tot.length?Math.max(...tot):null;
+ let tutar_eur=null,tutar_yerel=null,para_yerel=null;
+ if(ev.length){tutar_eur=Math.max(...ev);para_yerel=locCode||'EUR';tutar_yerel=totMax}
+ else if(trS>0&&!locCode){tutar_yerel=totMax;para_yerel='TRY'}
+ else if(locCode){tutar_yerel=totMax;para_yerel=locCode}
+ else{tutar_yerel=totMax;para_yerel=null}
+ const ulke=/GmbH|Deutschland|\bDE\s?\d/i.test(t)?'DE':/\bB\.?V\.?\b|Nederland/i.test(t)?'NL':/Belgi|Belgique|\bBE\s?\d/i.test(t)?'BE':/Österreich|\bAT\s?U/i.test(t)?'AT':/Magyar|\bKft\b|\bHUF\b/i.test(t)?'HU':/\bS\.?R\.?L\b|Rom[aâ]nia|\bRON\b|\bLEI\b/i.test(t)?'RO':/d\.o\.o|Srbija|\bRSD\b|\bPIB\b/i.test(t)?'RS':/s\.r\.o|Česk|Cesk|Kč|\bCZK\b/i.test(t)?'CZ':/ЕООД|България|Bulgaria|\bBGN\b/i.test(t)?'BG':(trS>0?'TR':'');
+ const K=[['Yol / Köprü',/toll|maut|bridge|br[uü]cke|\bpod\b|vinet|vignet|rovini|matrica|d[aá]ln|mýto|myto|putarin|naplat|peaj|autostr|autobahn|motorway|tunel|tunnel|útdíj|utdij/i],['Park',/parc|parkol|parking|parkov|parken|parkir/i],['Yemek',/restaur|étterem|etterem|restaurace|restoran|pizz|caf[eé]|kav[aá]rn|bufet|grill|burger|kebab|food|\bmen[uü]\b/i],['Tamir',/servis|service|szerviz|werkstatt|reparat|opravn|anvelop|gume|gumi|tyre|tire|vulkaniz/i]];
+ let kategori='Diğer';for(const [k,re] of K){if(re.test(t)){kategori=k;break}}
+ return{tarih,ulke,tutar_eur,tutar_yerel,para_yerel,kategori,aciklama:'',isyeri:''};
 }
 async function viaOCR(file){
  if(!window.Tesseract)await new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)});
@@ -294,33 +309,63 @@ async function viaOCR(file){
  const res=await Tesseract.recognize(blob,'eng+tur');
  return parseOCR(res.data.text||'');
 }
+function normRc(r){
+ const p=v=>{const x=parseFloat(String(v==null?'':v).replace(',','.'));return x>0?x:null};
+ return{eur:p(r.tutar_eur),loc:p(r.tutar_yerel!=null?r.tutar_yerel:r.tutar),pl:String(r.para_yerel||r.para||'').toUpperCase(),ulke:String(r.ulke||'').toUpperCase(),tarih:r.tarih,kategori:r.kategori,aciklama:r.aciklama||'',isyeri:r.isyeri||''};
+}
 async function readReceipt(file,c){
  const st=$(c+'-rc');
  st.textContent='Fiş okunuyor...';
+ let ocrPath=false;
  try{
   let r,ocr=false;
-  if(getKey())r=await viaAPI(file);
-  else{r=await viaClaude(file);if(!r){r=await viaOCR(file);ocr=true}}
-  const a=parseFloat(String(r.tutar).replace(',','.'));
-  const pk=String(r.para||'').toUpperCase();
-  let cur=pk=='EUR'?'EUR':(pk=='TRY'||pk=='TL')?'TL':null;
-  if(!cur&&ocr)cur=c;
-  if(!(a>0)||!cur){st.textContent='Fişten tutar veya para birimi (EUR/TL) okunamadı'+(pk&&!cur?' ('+pk+')':'')+'. Elle gir.';return}
-  const d=/^\d{4}-\d{2}-\d{2}$/.test(r.tarih||'')?r.tarih:today();
-  const cat=CATS.includes(r.kategori)?r.kategori:'Diğer';
-  const u=cur=='EUR'?String(r.ulke||'').toUpperCase().slice(0,2):'';
-  subtab(cur=='EUR'?2:1);
-  if(ocr){
-   $(cur+'-d').value=d;$(cur+'-c').value=cat;$(cur+'-a').value=a;$(cur+'-t').value='Fişli';if(cur=='EUR')$('EUR-u').value=u;
-   $(cur+'-rc').textContent='Ücretsiz okuma yaptı, hatalı olabilir: '+fd2(d)+' · '+f(a)+' '+SYM[cur]+(u?' · '+u:'')+'. Kontrol edip "Gideri kaydet"e bas.';return;
+  if(getKey()){
+   if(!navigator.onLine){st.textContent='İnternet yok. API anahtarıyla okuma için internet gerekir. Anahtarı silersen ücretsiz okuma denenir.';return}
+   r=await viaAPI(file);
+  }else{r=await viaClaude(file);if(!r){ocrPath=true;r=await viaOCR(file);ocr=true}}
+  const n=normRc(r);
+  let a=null,det=null;
+  if(n.eur){a=n.eur;det='EUR'}
+  else if(n.pl=='EUR'&&n.loc){a=n.loc;det='EUR'}
+  else if((n.pl=='TRY'||n.pl=='TL'||n.ulke=='TR')&&n.loc){a=n.loc;det='TL'}
+  else if(ocr&&!n.pl&&n.loc){a=n.loc;det=c}
+  const d=/^\d{4}-\d{2}-\d{2}$/.test(n.tarih||'')?n.tarih:today();
+  const cat=CATS.includes(n.kategori)?n.kategori:'Diğer';
+  const u=c=='EUR'?n.ulke.slice(0,2):'';
+  const note=[n.isyeri,n.aciklama].filter(Boolean).join(' · ');
+  const prefill=extra=>{$(c+'-d').value=d;$(c+'-c').value=cat;$(c+'-t').value='Fişli';$(c+'-n').value=note+(extra?(note?' · ':'')+extra:'');if(c=='EUR')$('EUR-u').value=u;if(a>0)$(c+'-a').value=a};
+  if(!(a>0)){
+   prefill(n.loc?f(n.loc)+' '+(n.pl||''):'');
+   st.textContent=n.loc?'Fişte euro karşılığı bulunamadı ('+f(n.loc)+' '+n.pl+'). Diğer bilgiler forma yazıldı, euro tutarını elle gir.':'Fişten tutar okunamadı. Elle gir.';
+   return;
   }
-  T().exp.push({id:Date.now(),d,cat,a,cur,tip:'Fişli',u,n:r.isyeri||''});
+  const nm=x=>x=='TL'?'Türkiye (TL)':'Harcırah (EUR)';
+  if(!ocr&&det&&det!==c){st.textContent='Fiş '+(det=='TL'?'TL':'euro')+' görünüyor ama '+nm(c)+' bölümündesin. '+nm(det)+' bölümünden tekrar çek.';return}
+  const warn=(ocr&&det&&det!==c)?' Dikkat: fiş '+(det=='TL'?'TL':'euro')+' görünüyor, kontrol et.':'';
+  if(ocr){
+   prefill('');
+   st.textContent='Ücretsiz okuma yaptı, hatalı olabilir: '+fd2(d)+' · '+cat+' · '+f(a)+' '+SYM[c]+(u?' · '+u:'')+'.'+warn+' Kontrol edip "Gideri kaydet"e bas.';return;
+  }
+  T().exp.push({id:Date.now(),d,cat,a,cur:c,tip:'Fişli',u,n:note});
   save();drawAcc();
-  $(cur+'-rc').textContent='Eklendi: '+fd2(d)+' · '+cat+' · '+f(a)+' '+SYM[cur]+(u?' · '+u:'')+' · Fişli. Yanlışsa listeden ✕ ile sil.';
+  $(c+'-rc').textContent='Eklendi: '+fd2(d)+' · '+cat+' · '+f(a)+' '+SYM[c]+(u?' · '+u:'')+(n.aciklama?' · '+n.aciklama:'')+' · Fişli. Yanlışsa listeden ✕ ile sil.';
  }catch(e){
-  st.textContent=e&&e.status==401?'API anahtarı geçersiz.':e&&e.status==429?'Kullanım sınırı doldu, biraz sonra tekrar dene.':'Fiş okunamadı, daha net çekip tekrar dene.';
+  st.textContent=e&&e.status==401?'API anahtarı geçersiz.':e&&e.status==429?'Kullanım sınırı doldu, biraz sonra tekrar dene.':(ocrPath&&!navigator.onLine)?'Çevrimdışı okuma hazır değil. İnternet varken bir kez "Çevrimdışı fiş okumayı hazırla"ya bas.':'Fiş okunamadı, daha net çekip tekrar dene.';
  }
 }
+async function prepOCR(){
+ const st=$('akst');
+ if(!navigator.onLine){st.textContent='Önce internete bağlan.';return}
+ st.textContent='Hazırlanıyor, 1-2 dakika sürebilir...';
+ try{
+  const cv=document.createElement('canvas');cv.width=320;cv.height=100;const x=cv.getContext('2d');
+  x.fillStyle='#fff';x.fillRect(0,0,320,100);x.fillStyle='#000';x.font='30px sans-serif';x.fillText('TOPLAM 12,50 TL',10,60);
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+  await viaOCR(blob);
+  st.textContent='Hazır. Artık internet olmadan da fiş okuyabilir.';
+ }catch(e){st.textContent='Hazırlanamadı. İnterneti kontrol edip tekrar dene.'}
+}
+$('prep').onclick=prepOCR;
 $('p2').addEventListener('change',e=>{const c=e.target.dataset.rc,fl=e.target.files&&e.target.files[0];if(c&&fl){e.target.value='';readReceipt(fl,c)}});
 $('rp').onclick=()=>{
  const t=T(),tl=sumCur(t,'TL'),eu=sumCur(t,'EUR');
