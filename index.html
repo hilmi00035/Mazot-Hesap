@@ -47,10 +47,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 #rview .bar{display:flex;gap:8px;margin-bottom:12px}
 #rview .bar button{flex:1;padding:12px;border-radius:10px;border:1px solid #333;background:#eee;color:#000;font:600 15px inherit;font-family:inherit}
 @media print{body>*:not(#rview){display:none!important}#rview{position:static;padding:0}#rview .bar{display:none}}
+.tabs.sm button{font-size:14px;padding:11px 4px}
+@media print{#rview .sf+.sf{page-break-before:always}}#rview .sf+.sf{border-top:2px solid #333;margin-top:22px;padding-top:10px}
 </style>
 </head>
 <body>
-<div class="tabs"><button id="t1" class="on">Mazot</button><button id="t2">Hesap</button></div>
+<div class="tabs"><button id="t1" class="on">Mazot</button><button id="t2">Hesap</button><button id="t3">Dosyalar</button></div>
 
 <section id="p1">
  <div class="card">
@@ -82,12 +84,15 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
   <label>Rota / sefer adı</label><input id="rota" placeholder="Almanya, Hollanda, Belçika">
   <div class="row"><div><label>Harcırah toplam (€)</label><input type="number" id="hT" inputmode="decimal"></div><div><label>Peşin alınan (€)</label><input type="number" id="hP" inputmode="decimal"></div></div>
   <label>Avans (TL)</label><input type="number" id="av" inputmode="decimal">
+  <label>Yapılan iş / not</label><input id="is" placeholder="Hangi işi yaptım...">
   <button class="ghost" id="nt">+ Yeni sefer</button> <button class="ghost" id="dt" style="color:var(--bad)">Seferi sil</button>
+  <button class="add" id="fin">Seferi kaydet ve bitir</button>
  </div>
- <div class="tabs"><button id="st1" class="on">₺ Türkiye</button><button id="st2">€ Harcırah</button><button id="st3">Parsiyel</button></div>
+ <div class="tabs sm"><button id="st1" class="on">₺ Türkiye</button><button id="st2">€ Harcırah</button><button id="st3">Parsiyel</button><button id="st4">Sefer</button></div>
  <div id="paneTL"></div>
  <div id="paneEUR" hidden></div>
  <div id="panePAR" hidden></div>
+ <div id="paneINF" hidden></div>
  <div class="card"><button class="ghost" id="rp" style="margin:0;width:100%">Sefer raporu</button><textarea id="rt" hidden readonly style="width:100%;height:240px;margin-top:8px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;font:14px/1.4 ui-monospace,monospace"></textarea></div>
  <div class="card"><div class="lab">Fiş okuma ayarı</div>
   <label>Claude API anahtarı (isteğe bağlı)</label><input id="akey" type="password" autocomplete="off" placeholder="sk-ant-...">
@@ -97,6 +102,13 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
   <div id="akst" class="mut"></div></div>
 </section>
 
+<section id="p3" hidden>
+ <div class="card"><div class="lab">Dosyalar (seferler)</div>
+  <small class="mut">Her sefer bir dosyadır. Raporda olmasını istediklerini işaretle, hepsi tek raporda alt alta gelir.</small>
+  <button class="add" id="dr">Seçilenlerin tek raporu</button>
+  <button class="ghost" id="dall">Tümünü seç / kaldır</button></div>
+ <div id="dlist"></div>
+</section>
 <div id="rview" hidden></div>
 <div id="toast" hidden></div>
 <script>
@@ -115,12 +127,12 @@ let tt=null;
 const snap=()=>JSON.stringify(S);
 function toast(msg,sn){
  $('toast').innerHTML='<span>'+msg+'</span><button id="undo">Geri al</button>';$('toast').hidden=false;
- $('undo').onclick=()=>{S=JSON.parse(sn);save();fillTrip();drawAll();drawAcc();$('toast').hidden=true};
+ $('undo').onclick=()=>{S=JSON.parse(sn);save();fillTrip();drawAll();drawAcc();drawDos();$('toast').hidden=true};
  clearTimeout(tt);tt=setTimeout(()=>{$('toast').hidden=true},8000);
 }
 const P=()=>S.profiles.find(p=>p.id==S.cur)||S.profiles[0];
-function tab(n){$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('t1').classList.toggle('on',n==1);$('t2').classList.toggle('on',n==2)}
-$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+function tab(n){$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('p3').hidden=n!=3;[1,2,3].forEach(i=>$('t'+i).classList.toggle('on',n==i));if(n==3)drawDos()}
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);$('t3').onclick=()=>tab(3);
 
 function num(v){const n=parseFloat(v);return isNaN(n)?0:n}
 function calc(p){
@@ -183,8 +195,8 @@ $('fl-list').onclick=e=>{const i=e.target.dataset.h;if(i){const sn=snap();S.hist
 
 // Hesap
 if(!S.trips||!S.trips.length){S.trips=[newTrip()];S.tcur=S.trips[0].id}
-function newTrip(){return{id:Date.now()+Math.random(),rota:'',hT:'',hP:'',av:'',exp:[],pa:'',ps:1,pu:15,ph:25,pd:'',pdu:''}}
-const T=()=>{const t=S.trips.find(t=>t.id==S.tcur)||S.trips[0];if(t.pu===undefined)Object.assign(t,{pa:'',ps:1,pu:15,ph:25,pd:'',pdu:''});return t};
+function newTrip(){return{id:Date.now()+Math.random(),rota:'',hT:'',hP:'',av:'',exp:[],pa:'',ps:1,pu:15,ph:25,pd:'',pdu:'',cek:'',dor:'',dyer:'',d1:'',d2:'',k1:'',l1:'',tes:'',kn:'',l2:'',mz:[],ab:[]}}
+const T=()=>{const t=S.trips.find(t=>t.id==S.tcur)||S.trips[0];if(t.pu===undefined)Object.assign(t,{pa:'',ps:1,pu:15,ph:25,pd:'',pdu:''});if(t.mz===undefined)Object.assign(t,{cek:'',dor:'',dyer:'',d1:'',d2:'',k1:'',l1:'',tes:'',kn:'',l2:'',mz:[],ab:[]});return t};
 const SYM={EUR:'€',TL:'₺'};
 const CATS=['Yol / Köprü','Yemek','Park','Tamir','Diğer'];
 const sumCur=(t,c)=>t.exp.filter(x=>x.cur==c).reduce((s,x)=>s+x.a,0);
@@ -208,7 +220,7 @@ function drawPane(c){
  if(c=='TL'){const k=num(t.av)-tot;
   $('TL-sum').innerHTML=card('Avans alınan',num(t.av),'blue')+card('Harcanan',tot,'or')+card('Kalan',k,k<0?'':'gr',1)}
  else{const el=num(t.hP)-tot,net=num(t.hT)-tot,pc=parCalc(t);
-  $('EUR-sum').innerHTML=card('Harcırah toplam',num(t.hT),'blue')+card('Peşin alınan',num(t.hP),'blue')+card('Harcanan',tot,'or')+card('Elde kalan',el,el<0?'':'gr')+card('Harcırah bitişte alınacak',num(t.hT)-num(t.hP),'blue')+card('Parsiyel alacak',pc.adr+pc.ret,'blue')+card('Telefon alacak',pc.ph,'blue')+card('Şirketten alınacak toplam',num(t.hT)-num(t.hP)+pc.adr+pc.ret+pc.ph,'gr')+card('Sefer sonu net (alacaklar dahil)',net+pc.adr+pc.ret+pc.ph,net+pc.adr+pc.ret+pc.ph<0?'':'gr',1)}
+  $('EUR-sum').innerHTML=card('Harcırah toplam (alacak)',num(t.hT),'blue')+card('Peşin alınan',num(t.hP),'blue')+card('Harcırah bitişte alınacak',num(t.hT)-num(t.hP),'blue')+card('Masraf iadesi',tot,'or')+card('Parsiyel alacak',pc.adr+pc.ret,'blue')+card('Telefon alacak',pc.ph,'blue')+card('Şirketten alınacak toplam',num(t.hT)-num(t.hP)+tot+pc.adr+pc.ret+pc.ph,'gr',1)}
  const cats={};L.forEach(x=>{cats[x.cat]=(cats[x.cat]||0)+x.a});
  const tp=k=>L.filter(x=>x.tip==k).reduce((s,x)=>s+x.a,0);
  const tipHTML=L.length?`<div class="item"><div><b>Nakit verilen</b></div><div><b>${f(tp('Nakit'))} ${sy}</b></div></div><div class="item"><div><b>Fişli</b></div><div><b>${f(tp('Fişli'))} ${sy}</b></div></div>`:'';
@@ -221,10 +233,10 @@ function drawPane(c){
 }
 function drawAcc(){
  const t=T();
- $('tsel').innerHTML=S.trips.map(x=>`<option value="${x.id}">${x.rota||'Yeni sefer'}</option>`).join('');$('tsel').value=t.id;
+ $('tsel').innerHTML=S.trips.map(x=>`<option value="${x.id}">${x.bitti?'✓ ':''}${x.rota||'Yeni sefer'}</option>`).join('');$('tsel').value=t.id;
  drawPane('TL');drawPane('EUR');drawPar();
 }
-function fillTrip(){const t=T();$('rota').value=t.rota;$('hT').value=t.hT;$('hP').value=t.hP;$('av').value=t.av;fillPar()}
+function fillTrip(){const t=T();$('rota').value=t.rota;$('hT').value=t.hT;$('hP').value=t.hP;$('av').value=t.av;$('is').value=t.is||'';fillPar();fillInf()}
 shell('TL');shell('EUR');
 function shellPar(){
  $('panePAR').innerHTML=`<div class="card"><div class="lab">Parsiyel</div>
@@ -248,12 +260,49 @@ function fillPar(){const t=T();PK.forEach(k=>$('q-'+k).value=t[k]??'')}
 shellPar();
 PK.forEach(k=>$('q-'+k).oninput=e=>{T()[k]=e.target.value;save();drawPar()});
 
-['rota','hT','hP','av'].forEach(k=>$(k).oninput=e=>{T()[k]=e.target.value;save();drawAcc()});
+const IK=['cek','dor','dyer','d1','d2','k1','l1','tes','kn','l2'];
+function shellInf(){
+ $('paneINF').innerHTML=`<div class="card"><div class="lab">Sefer bilgileri</div>
+ <div class="row"><div><label>Çekici plakası</label><input id="i-cek" autocapitalize="characters"></div><div><label>Dorse plakası</label><input id="i-dor" autocapitalize="characters"></div></div>
+ <label>Dorse alınan yer</label><input id="i-dyer" placeholder="İzmir">
+ <div class="row"><div><label>Başlangıç tarihi</label><input type="date" id="i-d1"></div><div><label>Bitiş tarihi</label><input type="date" id="i-d2"></div></div>
+ <div class="row"><div><label>Çıkış kilometresi</label><input type="number" id="i-k1" inputmode="numeric"></div><div><label>Çıkış mazot (L)</label><input type="number" id="i-l1" inputmode="decimal"></div></div>
+ <div class="lab" style="margin-top:14px">Alınan mazot</div><div id="i-mz"></div><button class="ghost" data-iadd="mz">+ Mazot alımı</button>
+ <div class="lab" style="margin-top:14px">Alınan AdBlue</div><div id="i-ab"></div><button class="ghost" data-iadd="ab">+ AdBlue alımı</button>
+ <label>Dorse teslim yeri</label><input id="i-tes">
+ <div class="row"><div><label>Dönüş kilometresi</label><input type="number" id="i-kn" inputmode="numeric"></div><div><label>Dönüş mazot (L)</label><input type="number" id="i-l2" inputmode="decimal"></div></div>
+ <button class="ghost" id="i-pull">Mazot sekmesinden al</button></div>`;
+}
+function drawInf(){
+ const t=T();
+ ['mz','ab'].forEach(k=>{$('i-'+k).innerHTML=t[k].map((b,i)=>`<div class="row" style="margin-bottom:6px;grid-template-columns:1fr 1fr 40px"><input data-ik="${k}" data-i="${i}" data-f="l" type="number" inputmode="decimal" placeholder="Litre" value="${b.l}"><input data-ik="${k}" data-i="${i}" data-f="u" placeholder="Yer / ülke" value="${String(b.u||'').replace(/"/g,'&quot;')}"><button data-idel="${k}:${i}" style="border:0;background:none;color:var(--bad);font-size:18px">✕</button></div>`).join('')||'<div class="empty">Henüz alım yok.</div>'});
+}
+function fillInf(){const t=T();IK.forEach(k=>$('i-'+k).value=t[k]??'');drawInf()}
+shellInf();
+IK.forEach(k=>$('i-'+k).oninput=e=>{T()[k]=(k=='cek'||k=='dor')?e.target.value.toUpperCase():e.target.value;save()});
+$('paneINF').addEventListener('input',e=>{const d=e.target.dataset;if(d.ik){T()[d.ik][+d.i][d.f]=e.target.value;save()}});
+$('paneINF').addEventListener('click',e=>{
+ const d=e.target.dataset;
+ if(d.iadd){T()[d.iadd].push({l:'',u:''});save();drawInf();return}
+ if(d.idel){const [k,i]=d.idel.split(':'),sn=snap();T()[k].splice(+i,1);save();drawInf();toast('Alım silindi.',sn);return}
+ if(e.target.id=='i-pull'){
+  const sn=snap(),p=P(),t=T();
+  Object.assign(t,{cek:p.pc,dor:p.pd,d1:p.d1,d2:p.d2,k1:p.k1,l1:p.l1,kn:p.kn,l2:p.real,mz:p.buys.filter(b=>num(b.l)>0).map(b=>({l:b.l,u:b.u||''}))});
+  save();fillInf();toast('Mazot sekmesinden alındı.',sn);
+ }
+});
+['rota','hT','hP','av','is'].forEach(k=>$(k).oninput=e=>{T()[k]=e.target.value;save();drawAcc()});
 $('tsel').onchange=e=>{S.tcur=e.target.value;save();fillTrip();drawAcc()};
 $('dt').onclick=()=>{const sn=snap();if(S.trips.length>1){S.trips=S.trips.filter(t=>t.id!=S.tcur);S.tcur=S.trips[0].id}else{const t=newTrip();t.id=T().id;S.trips[0]=t}save();fillTrip();drawAcc();toast('Sefer silindi.',sn)};
+$('fin').onclick=()=>{
+ const sn=snap(),t=T();t.bitti=true;if(!t.d2)t.d2=today();
+ const n=newTrip();n.cek=t.cek;n.pu=t.pu;n.ph=t.ph;
+ S.trips.push(n);S.tcur=n.id;save();fillTrip();drawAcc();subtab(1);
+ toast('Sefer kaydedildi. Yeni sefer açıldı.',sn);
+};
 $('nt').onclick=()=>{const t=newTrip();S.trips.push(t);S.tcur=t.id;save();fillTrip();drawAcc()};
-function subtab(n){$('paneTL').hidden=n!=1;$('paneEUR').hidden=n!=2;$('panePAR').hidden=n!=3;[1,2,3].forEach(i=>$('st'+i).classList.toggle('on',n==i))}
-$('st1').onclick=()=>subtab(1);$('st2').onclick=()=>subtab(2);$('st3').onclick=()=>subtab(3);
+function subtab(n){$('paneTL').hidden=n!=1;$('paneEUR').hidden=n!=2;$('panePAR').hidden=n!=3;$('paneINF').hidden=n!=4;[1,2,3,4].forEach(i=>$('st'+i).classList.toggle('on',n==i))}
+$('st1').onclick=()=>subtab(1);$('st2').onclick=()=>subtab(2);$('st3').onclick=()=>subtab(3);$('st4').onclick=()=>subtab(4);
 $('p2').addEventListener('click',e=>{
  const c=e.target.dataset.add;
  if(c){
@@ -378,37 +427,77 @@ async function prepOCR(){
 $('prep').onclick=prepOCR;
 $('p2').addEventListener('change',e=>{const c=e.target.dataset.rc,fl=e.target.files&&e.target.files[0];if(c&&fl){e.target.value='';readReceipt(fl,c)}});
 const esc=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function repText(t){
- const tl=sumCur(t,'TL'),eu=sumCur(t,'EUR'),pc=parCalc(t);
+function sums(t){const tl=sumCur(t,'TL'),eu=sumCur(t,'EUR'),pc=parCalc(t);return{tl,eu,pc,rec:num(t.hT)-num(t.hP)+eu+pc.tot}}
+const fdx=d=>d?fd2(d):'-';
+function oneText(t,i,multi){
+ const m=sums(t),tl=m.tl,eu=m.eu,pc=m.pc;
  const line=x=>'  '+x.d+' | '+x.cat+' | '+(x.tip||'Nakit')+(x.u?' | '+x.u:'')+' | '+f(x.a)+(x.n?' | '+x.n:'');
- return ['SEFER: '+(t.rota||'-'),'',
+ const yol=Math.max(0,num(t.kn)-num(t.k1)),ls=L=>L.filter(b=>num(b.l)>0).map(b=>f(num(b.l),0)+' L ('+(b.u||'-')+')').join(', ')||'-';
+ return [(multi?'DOSYA '+(i+1)+': ':'SEFER: ')+(t.rota||'-'),'Çekici: '+(t.cek||'-')+' | Dorse: '+(t.dor||'-')+' | Dorse alınan yer: '+(t.dyer||'-'),'Başlangıç: '+fdx(t.d1)+' | Bitiş: '+fdx(t.d2),'Yapılan iş: '+(t.is||'-')+' | Durum: '+(t.bitti?'Bitti':'Açık'),'',
   'TÜRKİYE MASRAFI (TL)','Avans: '+f(num(t.av))+' TL | Harcanan: '+f(tl)+' TL | Kalan: '+f(num(t.av)-tl)+' TL',...t.exp.filter(x=>x.cur=='TL').map(line),'',
-  'HARCIRAH (EUR)','Toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Harcanan: '+f(eu)+' EUR','Elde kalan: '+f(num(t.hP)-eu)+' EUR | Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'',
+  'HARCIRAH (EUR)','Harcırah toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR','Yapılan masraf (iade edilecek): '+f(eu)+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'',
   'PARSİYEL (EUR)','Adres: '+pc.n+' x '+f(num(t.pu))+' = '+f(pc.adr)+' | Dönüş: '+num(t.pd)+' x '+f(pc.ru)+' = '+f(pc.ret),'Telefon: '+f(pc.ph)+' | Toplam alacak: '+f(pc.tot)+' EUR','',
-  'Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.tot)+' EUR','Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.tot)+' EUR'].join('\n');
+  'Şirketten alınacak toplam: '+f(m.rec)+' EUR (harcırah kalanı + masraf iadesi + parsiyel + telefon)','','MAZOT VE KİLOMETRE','Çıkış km: '+(t.k1!==''?f(num(t.k1),0):'-')+' | Çıkış mazot: '+(t.l1!==''?f(num(t.l1),0)+' L':'-'),'Alınan mazot: '+ls(t.mz),'Alınan AdBlue: '+ls(t.ab),'Dorse teslim yeri: '+(t.tes||'-'),'Dönüş km: '+(t.kn!==''?f(num(t.kn),0):'-')+' | Dönüş mazot: '+(t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?' | Gidilen yol: '+f(yol,0)+' km':'')].join('\n');
 }
-function openReport(){
- const t=T(),tl=sumCur(t,'TL'),eu=sumCur(t,'EUR'),pc=parCalc(t);
+function repText(list){
+ const multi=list.length>1;let top='';
+ if(multi){let r=0,tl=0;
+  top='DOSYA LİSTESİ\n'+list.map((t,i)=>{const m=sums(t);r+=m.rec;tl+=m.tl;return (i+1)+'. '+(t.rota||'Adsız sefer')+' | '+fdx(t.d1)+' - '+fdx(t.d2)+' | '+(t.is||'-')+' | '+f(m.rec)+' EUR | '+f(m.tl)+' TL'}).join('\n')+'\nTOPLAM: '+f(r)+' EUR | '+f(tl)+' TL\n\n==========\n\n';}
+ return top+list.map((t,i)=>oneText(t,i,multi)).join('\n\n==========\n\n');
+}
+function secHTML(t,i,multi){
+ const m=sums(t),pc=m.pc,tl=m.tl,eu=m.eu;
+ const tipSum=k=>t.exp.filter(x=>x.cur=='EUR'&&(x.tip||'Nakit')==k).reduce((s,x)=>s+x.a,0);
+ const yol=Math.max(0,num(t.kn)-num(t.k1)),mzS=t.mz.reduce((x,b)=>x+num(b.l),0),abS=t.ab.reduce((x,b)=>x+num(b.l),0),tuk=num(t.l1)+mzS-num(t.l2);
+ const kv=(a,b)=>'<tr><th style="width:42%">'+a+'</th><td>'+b+'</td></tr>';
+ const lst=L=>L.filter(b=>num(b.l)>0).length?L.filter(b=>num(b.l)>0).map(b=>f(num(b.l),0)+' L · '+esc(b.u||'-')).join('<br>'):'-';
  const rows=cur=>{
   const L=t.exp.filter(x=>x.cur==cur).sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:((x.tip||'Nakit')==(y.tip||'Nakit')?x.id-y.id:((x.tip||'Nakit')=='Nakit'?-1:1)));
   const e=cur=='EUR';
   return L.length?'<table><tr><th>Tarih</th><th>Kategori</th><th>Tür</th>'+(e?'<th>Ülke</th>':'')+'<th>Not</th><th>Tutar</th></tr>'+L.map(x=>'<tr><td>'+fd2(x.d)+'</td><td>'+esc(x.cat)+'</td><td>'+(x.tip||'Nakit')+'</td>'+(e?'<td>'+esc(x.u)+'</td>':'')+'<td>'+esc(x.n)+'</td><td style="text-align:right">'+f(x.a)+' '+SYM[cur]+'</td></tr>').join('')+'<tr><th colspan="'+(e?5:4)+'" style="text-align:right">Toplam</th><th style="text-align:right">'+f(e?eu:tl)+' '+SYM[cur]+'</th></tr></table>':'<p>Kayıt yok.</p>';
  };
- $('rview').innerHTML='<div class="bar"><button id="rv-pr">Yazdır / PDF</button><button id="rv-sh">Paylaş / Kopyala</button><button id="rv-x">Kapat</button></div>'+
-  '<h2>Sefer Raporu: '+esc(t.rota||'-')+'</h2><p>Rapor tarihi: '+fd2(today())+'</p>'+
+ return '<div class="sf"><h2>'+(multi?'Dosya '+(i+1)+': ':'Sefer Raporu: ')+esc(t.rota||'Adsız sefer')+'</h2>'+
+  '<p>Çekici: <b>'+esc(t.cek||'-')+'</b> · Dorse: <b>'+esc(t.dor||'-')+'</b><br>Dorse alınan yer: '+esc(t.dyer||'-')+' · Başlangıç: '+fdx(t.d1)+' · Bitiş: '+fdx(t.d2)+'<br>Yapılan iş: '+esc(t.is||'-')+' · Durum: '+(t.bitti?'Bitti':'Açık')+'</p>'+
   '<h3>Türkiye masrafı (TL)</h3><p>Avans: '+f(num(t.av))+' ₺ · Harcanan: '+f(tl)+' ₺ · Kalan: '+f(num(t.av)-tl)+' ₺</p>'+rows('TL')+
-  '<h3>Harcırah giderleri (EUR)</h3><p>Toplam: '+f(num(t.hT))+' € · Peşin alınan: '+f(num(t.hP))+' € · Harcanan: '+f(eu)+' € · Elde kalan: '+f(num(t.hP)-eu)+' €</p>'+rows('EUR')+
+  '<h3>Harcırah ve masraflar (EUR)</h3><p>Harcırah toplam: '+f(num(t.hT))+' € · Peşin alınan: '+f(num(t.hP))+' € · Bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br>Yapılan masraf (iade edilecek): '+f(eu)+' € (fişli '+f(tipSum('Fişli'))+' €, nakit '+f(tipSum('Nakit'))+' €)</p>'+rows('EUR')+
   '<h3>Parsiyel ve telefon (EUR)</h3><p>Adres: '+pc.n+' × '+f(num(t.pu))+' = '+f(pc.adr)+' € · Dönüş: '+num(t.pd)+' × '+f(pc.ru)+' = '+f(pc.ret)+' € · Telefon: '+f(pc.ph)+' € · Toplam: '+f(pc.tot)+' €</p>'+
-  '<h3>Özet</h3><p>Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br><b>Şirketten alınacak toplam: '+f(num(t.hT)-num(t.hP)+pc.tot)+' €</b><br>Sefer sonu net (alacaklar dahil): '+f(num(t.hT)-eu+pc.tot)+' €</p>';
+  '<h3>Özet (şirketten alınacak)</h3><p>Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br>Masraf iadesi: '+f(eu)+' €<br>Parsiyel ve telefon: '+f(pc.tot)+' €<br><b>Şirketten alınacak toplam: '+f(m.rec)+' €</b></p>'+
+  '<h3>Mazot ve kilometre</h3><table>'+kv('Çıkış kilometresi',t.k1!==''?f(num(t.k1),0)+' km':'-')+kv('Çıkış mazot',t.l1!==''?f(num(t.l1),0)+' L':'-')+kv('Alınan mazot',lst(t.mz)+(mzS?'<br><b>Toplam '+f(mzS,0)+' L</b>':''))+kv('Alınan AdBlue',lst(t.ab)+(abS?'<br><b>Toplam '+f(abS,0)+' L</b>':''))+kv('Dorse teslim yeri',esc(t.tes||'-'))+kv('Dönüş kilometresi',t.kn!==''?f(num(t.kn),0)+' km':'-')+kv('Dönüş mazot',t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?kv('Gidilen yol',f(yol,0)+' km'):'')+(yol>0&&t.l2!==''?kv('Toplam tüketim',f(tuk,0)+' L · '+f(tuk/yol*100,1)+' L/100 km'):'')+'</table></div>';
+}
+function totalHTML(list){
+ let r=0,tl=0;
+ const rows=list.map((t,i)=>{const m=sums(t);r+=m.rec;tl+=m.tl;return '<tr><td>'+(i+1)+'</td><td>'+esc(t.rota||'Adsız sefer')+'</td><td>'+fdx(t.d1)+' → '+fdx(t.d2)+'</td><td>'+esc(t.is||'-')+'</td><td style="text-align:right">'+f(m.rec)+' €</td><td style="text-align:right">'+f(m.tl)+' ₺</td></tr>'}).join('');
+ return '<div class="sf"><h2>Sefer Raporu ('+list.length+' dosya)</h2><p>Rapor tarihi: '+fd2(today())+'</p><table><tr><th>#</th><th>Dosya</th><th>Tarih</th><th>Yapılan iş</th><th>Alınacak (€)</th><th>TL masraf</th></tr>'+rows+'<tr><th colspan="4" style="text-align:right">Toplam</th><th style="text-align:right">'+f(r)+' €</th><th style="text-align:right">'+f(tl)+' ₺</th></tr></table></div>';
+}
+function openReport(list){
+ const multi=list.length>1;
+ $('rview').innerHTML='<div class="bar"><button id="rv-pr">Yazdır / PDF</button><button id="rv-sh">Paylaş / Kopyala</button><button id="rv-x">Kapat</button></div>'+(multi?totalHTML(list):'')+list.map((t,i)=>secHTML(t,i,multi)).join('')+(multi?'':'<p>Rapor tarihi: '+fd2(today())+'</p>');
  $('rview').hidden=false;$('rview').scrollTop=0;
  $('rv-x').onclick=()=>{$('rview').hidden=true};
  $('rv-pr').onclick=()=>window.print();
- $('rv-sh').onclick=()=>{const tx=repText(t);
+ $('rv-sh').onclick=()=>{const tx=repText(list);
   if(navigator.share)navigator.share({title:'Sefer raporu',text:tx}).catch(()=>{});
   else if(navigator.clipboard)navigator.clipboard.writeText(tx).then(()=>alert('Rapor kopyalandı.'),()=>alert('Kopyalanamadı.'));
  };
 }
-$('rp').onclick=openReport;
+function drawDos(){
+ const L=[...S.trips].reverse();
+ $('dlist').innerHTML=L.map(t=>{const m=sums(t);return '<div class="card"><label style="display:flex;gap:8px;align-items:center;margin:0 0 6px;color:var(--ink);font-size:16px"><input type="checkbox" data-sel="'+t.id+'" '+(t.sel!==false?'checked':'')+' style="width:auto"> <b>'+esc(t.rota||'Adsız sefer')+'</b> <span style="color:var(--mut);font-size:13px">'+(t.bitti?'✓ Bitti':'Açık')+'</span></label>'+
+  '<small class="mut">'+esc(t.cek||'-')+' / '+esc(t.dor||'-')+' · '+fdx(t.d1)+' → '+fdx(t.d2)+'</small>'+
+  '<label>Yapılan iş / not</label><input data-is="'+t.id+'" value="'+esc(t.is||'')+'" placeholder="Hangi işi yaptım...">'+
+  '<div class="row" style="margin-top:8px"><div><small class="mut">Şirketten alınacak</small><b>'+f(m.rec)+' €</b></div><div><small class="mut">Türkiye masrafı</small><b>'+f(m.tl)+' ₺</b></div></div>'+
+  '<button class="ghost" data-open="'+t.id+'">Aç</button> <button class="ghost" data-dd="'+t.id+'" style="color:var(--bad)">Sil</button></div>'}).join('')||'<div class="empty">Henüz dosya yok.</div>';
+}
+$('dlist').addEventListener('change',e=>{const i=e.target.dataset.sel;if(i){const t=S.trips.find(x=>x.id==i);if(t){t.sel=e.target.checked;save()}}});
+$('dlist').addEventListener('input',e=>{const i=e.target.dataset.is;if(i){const t=S.trips.find(x=>x.id==i);if(t){t.is=e.target.value;save()}}});
+$('dlist').addEventListener('click',e=>{
+ const d=e.target.dataset;
+ if(d.open){S.tcur=S.trips.find(x=>x.id==d.open).id;save();fillTrip();drawAcc();tab(2);subtab(1);return}
+ if(d.dd){const sn=snap();if(S.trips.length>1){S.trips=S.trips.filter(x=>x.id!=d.dd);if(!S.trips.find(x=>x.id==S.tcur))S.tcur=S.trips[0].id}else{const n=newTrip();n.id=S.trips[0].id;S.trips[0]=n}save();fillTrip();drawAcc();drawDos();toast('Dosya silindi.',sn)}
+});
+$('dr').onclick=()=>{const L=S.trips.filter(t=>t.sel!==false);if(!L.length){alert('Rapor için en az bir dosya seç.');return}openReport(L)};
+$('dall').onclick=()=>{const all=S.trips.every(t=>t.sel!==false);S.trips.forEach(t=>t.sel=!all);save();drawDos()};
+$('rp').onclick=()=>openReport([T()]);
 $('bk').onclick=()=>{const b=new Blob([JSON.stringify(S)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mazot-yedek-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000);$('akst').textContent='Yedek dosyası indirildi.'};
 $('rs').onchange=e=>{const fl=e.target.files[0];e.target.value='';if(!fl)return;const r=new FileReader();r.onload=()=>{try{const sn=snap();const d=JSON.parse(r.result);if(!d.profiles||!d.profiles.length||!d.trips)throw 0;S=d;save();fillTrip();drawAll();drawAcc();toast('Yedek yüklendi.',sn)}catch(x){alert('Yedek dosyası okunamadı.')}};r.readAsText(fl)};
 drawAll();fillTrip();drawAcc();
