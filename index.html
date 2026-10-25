@@ -52,6 +52,7 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 </style>
 </head>
 <body>
+<div id="offbar" class="mut" hidden style="text-align:center;margin:0 0 8px">İnternet yok, çevrimdışı çalışıyor</div>
 <div class="tabs"><button id="t1" class="on">Mazot</button><button id="t2">Hesap</button><button id="t3">Dosyalar</button></div>
 
 <section id="p1">
@@ -65,12 +66,13 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
   <div class="card"><div class="lab">Çıkış kilometresi</div><div class="big blue"><input id="k1" type="number" inputmode="numeric" placeholder="0"><u>KM</u></div></div>
   <div class="card"><div class="lab">Çıkış mazot</div><div class="big or"><input id="l1" type="number" inputmode="decimal" placeholder="0"><u>L</u></div></div>
   <div class="card"><div class="lab">Şu anki / dönüş km</div><div class="big blue"><input id="kn" type="number" inputmode="numeric" placeholder="0"><u>KM</u></div></div>
-  <div class="card"><div class="lab">Gidilen yol</div><div class="big blue"><span id="yol">0</span><u>KM</u></div></div>
+  <div class="card"><div class="lab">Toplam kilometre</div><div class="big blue"><span id="yol">0</span><u>KM</u></div></div>
   <div class="card"><div class="lab">Toplam mazot</div><div class="big or"><span id="tot">0</span><u>L</u></div></div>
   <div class="card"><div class="lab">Kalan mazot</div><div class="big gr"><span id="kal">0</span><u>L</u></div>
    <label>Tüketim:</label><select id="rate"></select>
    <button class="ghost" id="rd">Düzenle</button></div>
  </div>
+ <button class="ghost" id="lk" style="margin:0 0 12px;width:100%">🔒 Çıkış bilgilerini kilitle</button>
  <div class="card"><div class="lab">Alınan mazot</div><div id="buys"></div><button class="ghost" id="ab">+ Mazot alımı ekle</button>
   <label>Depodaki gerçek mazot (dönüşte, isteğe bağlı)</label><input type="number" id="real" inputmode="decimal">
   <div id="gercek" class="lab" style="margin-top:10px"></div>
@@ -99,7 +101,8 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
   <small class="mut">Anahtar varsa fiş Claude ile okunur, tarih ve tutar çok daha doğru çıkar. Anahtar sadece bu telefonda saklanır. Boş bırakırsan ücretsiz okuma kullanılır, sonucu kontrol edip kaydedersin.</small>
   <label class="ghost" style="display:inline-block">Yedekten yükle<input type="file" accept="application/json,.json" id="rs" style="display:none"></label> <button class="ghost" id="bk">Yedek al</button>
   <button class="ghost" id="prep">Çevrimdışı fiş okumayı hazırla</button>
-  <div id="akst" class="mut"></div></div>
+  <div id="akst" class="mut"></div>
+  <div id="offst" class="mut"></div></div>
 </section>
 
 <section id="p3" hidden>
@@ -162,6 +165,7 @@ function drawAll(){
  const p=P();drawProf();
  ['pc','pd','d1','d2','k1','l1','kn','real'].forEach(k=>$(k).value=p[k]??'');
  drawRate(p);drawBuys(p);drawCalc();drawHist();
+ ['k1','l1'].forEach(k=>{$(k).readOnly=!!p.lock;$(k).style.opacity=p.lock?.6:1});$('lk').textContent=p.lock?'🔓 Çıkış bilgilerinin kilidini aç':'🔒 Çıkış bilgilerini kilitle';
 }
 function drawHist(){
  $('fl-list').innerHTML=S.hist.length?[...S.hist].reverse().map(x=>`<div class="item"><div><b>${x.d1} → ${x.d2||'?'}</b><small>${x.pc} / ${x.pd}</small><small>${f0(x.k1)} → ${f0(x.kn)} km · ${f0(x.yol)} km</small><small>Çıkış ${f0(x.l1)} L · Alım: ${x.buys.length?x.buys.map(b=>f0(b.l)+' L '+(b.u||'')).join(', '):'yok'}${x.real!==''?' · Dönüş '+f0(x.real)+' L':''}</small></div><div style="text-align:right">${x.avg!=null?'<b class="or">'+f(x.avg,1)+'</b><small>L/100</small>':''}<button data-h="${x.id}">✕</button></div></div>`).join(''):'<div class="empty">Kayıtlı sefer yok.</div>';
@@ -173,6 +177,7 @@ function drawHist(){
 $('prof').onchange=e=>{S.cur=e.target.value;save();drawAll()};
 $('dp').onclick=()=>{const sn=snap();if(S.profiles.length>1){S.profiles=S.profiles.filter(p=>p.id!=S.cur);S.cur=S.profiles[0].id}else{Object.assign(P(),np(),{id:P().id})}save();drawAll();toast('Profil silindi.',sn)};
 $('np').onclick=()=>{const p=np();S.profiles.push(p);S.cur=p.id;save();drawAll()};
+$('lk').onclick=()=>{const p=P();p.lock=!p.lock;save();drawAll()};
 $('rate').onchange=e=>{P().rate=num(e.target.value);save();drawCalc()};
 $('rd').onclick=()=>{
  if($('rate-ed'))return;
@@ -186,9 +191,10 @@ $('buys').oninput=e=>{const t=e.target,p=P();if(t.dataset.i!=null){p.buys[t.data
 $('fa').onclick=()=>{
  const p=P(),c=calc(p);
  if(!(c.yol>0)){alert('Çıkış ve şu anki km gir.');return}
+ {const th=T();if(!th.bitti)syncMazot(th,p)}
  const used=p.real!==''?c.tot-num(p.real):null;
  S.hist.push({id:Date.now(),d1:p.d1,d2:p.d2,pc:p.pc,pd:p.pd,k1:num(p.k1),kn:num(p.kn),yol:c.yol,l1:num(p.l1),buys:p.buys.filter(b=>num(b.l)>0),real:p.real,avg:used!=null?used/c.yol*100:null});
- p.k1=p.kn;p.l1=p.real!==''?p.real:Math.max(0,c.kal);p.kn='';p.buys=[];p.real='';p.d1=p.d2=today();
+ p.k1='';p.l1='';p.kn='';p.buys=[];p.real='';p.lock=false;p.d1=p.d2=today();
  save();drawAll();
 };
 $('fl-list').onclick=e=>{const i=e.target.dataset.h;if(i){const sn=snap();S.hist=S.hist.filter(x=>x.id!=i);save();drawHist();toast('Sefer kaydı silindi.',sn)}};
@@ -271,20 +277,22 @@ function shellInf(){
  <div class="lab" style="margin-top:14px">Alınan AdBlue</div><div id="i-ab"></div><button class="ghost" data-iadd="ab">+ AdBlue alımı</button>
  <label>Dorse teslim yeri</label><input id="i-tes">
  <div class="row"><div><label>Dönüş kilometresi</label><input type="number" id="i-kn" inputmode="numeric"></div><div><label>Dönüş mazot (L)</label><input type="number" id="i-l2" inputmode="decimal"></div></div>
+ <div id="i-tot" class="mut" style="margin-top:8px"></div>
  <button class="ghost" id="i-pull">Mazot sekmesinden al</button></div>`;
 }
 function drawInf(){
  const t=T();
  ['mz','ab'].forEach(k=>{$('i-'+k).innerHTML=t[k].map((b,i)=>`<div class="row" style="margin-bottom:6px;grid-template-columns:1fr 1fr 40px"><input data-ik="${k}" data-i="${i}" data-f="l" type="number" inputmode="decimal" placeholder="Litre" value="${b.l}"><input data-ik="${k}" data-i="${i}" data-f="u" placeholder="Yer / ülke" value="${String(b.u||'').replace(/"/g,'&quot;')}"><button data-idel="${k}:${i}" style="border:0;background:none;color:var(--bad);font-size:18px">✕</button></div>`).join('')||'<div class="empty">Henüz alım yok.</div>'});
 }
-function fillInf(){const t=T();IK.forEach(k=>$('i-'+k).value=t[k]??'');drawInf()}
+function updTot(){const t=T(),mz=t.mz.reduce((x,b)=>x+num(b.l),0),yol=Math.max(0,num(t.kn)-num(t.k1));$('i-tot').textContent='Toplam mazot (çıkış + alınan): '+f(num(t.l1)+mz,0)+' L · Toplam kilometre: '+f(yol,0)+' km'}
+function fillInf(){const t=T();IK.forEach(k=>$('i-'+k).value=t[k]??'');drawInf();updTot()}
 shellInf();
-IK.forEach(k=>$('i-'+k).oninput=e=>{T()[k]=(k=='cek'||k=='dor')?e.target.value.toUpperCase():e.target.value;save()});
-$('paneINF').addEventListener('input',e=>{const d=e.target.dataset;if(d.ik){T()[d.ik][+d.i][d.f]=e.target.value;save()}});
+IK.forEach(k=>$('i-'+k).oninput=e=>{T()[k]=(k=='cek'||k=='dor')?e.target.value.toUpperCase():e.target.value;save();updTot()});
+$('paneINF').addEventListener('input',e=>{const d=e.target.dataset;if(d.ik){T()[d.ik][+d.i][d.f]=e.target.value;save();updTot()}});
 $('paneINF').addEventListener('click',e=>{
  const d=e.target.dataset;
- if(d.iadd){T()[d.iadd].push({l:'',u:''});save();drawInf();return}
- if(d.idel){const [k,i]=d.idel.split(':'),sn=snap();T()[k].splice(+i,1);save();drawInf();toast('Alım silindi.',sn);return}
+ if(d.iadd){T()[d.iadd].push({l:'',u:''});save();drawInf();updTot();return}
+ if(d.idel){const [k,i]=d.idel.split(':'),sn=snap();T()[k].splice(+i,1);save();drawInf();updTot();toast('Alım silindi.',sn);return}
  if(e.target.id=='i-pull'){
   const sn=snap(),p=P(),t=T();
   Object.assign(t,{cek:p.pc,dor:p.pd,d1:p.d1,d2:p.d2,k1:p.k1,l1:p.l1,kn:p.kn,l2:p.real,mz:p.buys.filter(b=>num(b.l)>0).map(b=>({l:b.l,u:b.u||''}))});
@@ -295,14 +303,14 @@ $('paneINF').addEventListener('click',e=>{
 $('tsel').onchange=e=>{S.tcur=e.target.value;save();fillTrip();drawAcc()};
 $('dt').onclick=()=>{const sn=snap();if(S.trips.length>1){S.trips=S.trips.filter(t=>t.id!=S.tcur);S.tcur=S.trips[0].id}else{const t=newTrip();t.id=T().id;S.trips[0]=t}save();fillTrip();drawAcc();toast('Sefer silindi.',sn)};
 $('fin').onclick=()=>{
- const sn=snap(),t=T();t.bitti=true;if(!t.d2)t.d2=today();
+ const sn=snap(),t=T();syncMazot(t,P());t.bitti=true;if(!t.d2)t.d2=today();
  const n=newTrip();n.cek=t.cek;n.pu=t.pu;n.ph=t.ph;
  S.trips.push(n);S.tcur=n.id;save();fillTrip();drawAcc();subtab(1);
  toast('Sefer kaydedildi. Yeni sefer açıldı.',sn);
 };
 $('nt').onclick=()=>{const t=newTrip();S.trips.push(t);S.tcur=t.id;save();fillTrip();drawAcc()};
 function subtab(n){$('paneTL').hidden=n!=1;$('paneEUR').hidden=n!=2;$('panePAR').hidden=n!=3;$('paneINF').hidden=n!=4;[1,2,3,4].forEach(i=>$('st'+i).classList.toggle('on',n==i))}
-$('st1').onclick=()=>subtab(1);$('st2').onclick=()=>subtab(2);$('st3').onclick=()=>subtab(3);$('st4').onclick=()=>subtab(4);
+$('st1').onclick=()=>subtab(1);$('st2').onclick=()=>subtab(2);$('st3').onclick=()=>subtab(3);$('st4').onclick=()=>{subtab(4);const t=T();if(!t.bitti){syncMazot(t,P());fillInf()}};
 $('p2').addEventListener('click',e=>{
  const c=e.target.dataset.add;
  if(c){
@@ -437,7 +445,7 @@ function oneText(t,i,multi){
   'TÜRKİYE MASRAFI (TL)','Avans: '+f(num(t.av))+' TL | Harcanan: '+f(tl)+' TL | Kalan: '+f(num(t.av)-tl)+' TL',...t.exp.filter(x=>x.cur=='TL').map(line),'',
   'HARCIRAH (EUR)','Harcırah toplam: '+f(num(t.hT))+' EUR | Peşin: '+f(num(t.hP))+' EUR | Bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' EUR','Yapılan masraf (iade edilecek): '+f(eu)+' EUR',...t.exp.filter(x=>x.cur=='EUR').map(line),'',
   'PARSİYEL (EUR)','Adres: '+pc.n+' x '+f(num(t.pu))+' = '+f(pc.adr)+' | Dönüş: '+num(t.pd)+' x '+f(pc.ru)+' = '+f(pc.ret),'Telefon: '+f(pc.ph)+' | Toplam alacak: '+f(pc.tot)+' EUR','',
-  'Şirketten alınacak toplam: '+f(m.rec)+' EUR (harcırah kalanı + masraf iadesi + parsiyel + telefon)','','MAZOT VE KİLOMETRE','Çıkış km: '+(t.k1!==''?f(num(t.k1),0):'-')+' | Çıkış mazot: '+(t.l1!==''?f(num(t.l1),0)+' L':'-'),'Alınan mazot: '+ls(t.mz),'Alınan AdBlue: '+ls(t.ab),'Dorse teslim yeri: '+(t.tes||'-'),'Dönüş km: '+(t.kn!==''?f(num(t.kn),0):'-')+' | Dönüş mazot: '+(t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?' | Gidilen yol: '+f(yol,0)+' km':'')].join('\n');
+  'Şirketten alınacak toplam: '+f(m.rec)+' EUR (harcırah kalanı + masraf iadesi + parsiyel + telefon)','','MAZOT VE KİLOMETRE','Çıkış km: '+(t.k1!==''?f(num(t.k1),0):'-'),'Çıkış mazot: '+(t.l1!==''?f(num(t.l1),0)+' L':'-'),'Alınan mazot: '+ls(t.mz),'Toplam mazot (çıkış + alınan): '+((t.l1!==''||t.mz.length)?f(num(t.l1)+t.mz.reduce((x,b)=>x+num(b.l),0),0)+' L':'-'),'Alınan AdBlue: '+ls(t.ab),'Dorse alınan yer: '+(t.dyer||'-'),'Dorse teslim yeri: '+(t.tes||'-'),'Dönüş km: '+(t.kn!==''?f(num(t.kn),0):'-'),'Araçta kalan mazot (dönüş): '+(t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?' | Toplam kilometre: '+f(yol,0)+' km':''),'','RAPOR ÖZETİ','Yapılan iş: '+(t.is||'-')+' ('+fdx(t.d1)+' - '+fdx(t.d2)+')','Dorse '+(t.dyer||'-')+' konumundan alındı, '+(t.tes||'-')+' konumunda teslim edildi.','Şirketten alınacak toplam: '+f(m.rec)+' EUR'].join('\n');
 }
 function repText(list){
  const multi=list.length>1;let top='';
@@ -462,14 +470,29 @@ function secHTML(t,i,multi){
   '<h3>Harcırah ve masraflar (EUR)</h3><p>Harcırah toplam: '+f(num(t.hT))+' € · Peşin alınan: '+f(num(t.hP))+' € · Bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br>Yapılan masraf (iade edilecek): '+f(eu)+' € (fişli '+f(tipSum('Fişli'))+' €, nakit '+f(tipSum('Nakit'))+' €)</p>'+rows('EUR')+
   '<h3>Parsiyel ve telefon (EUR)</h3><p>Adres: '+pc.n+' × '+f(num(t.pu))+' = '+f(pc.adr)+' € · Dönüş: '+num(t.pd)+' × '+f(pc.ru)+' = '+f(pc.ret)+' € · Telefon: '+f(pc.ph)+' € · Toplam: '+f(pc.tot)+' €</p>'+
   '<h3>Özet (şirketten alınacak)</h3><p>Harcırah bitişte alınacak: '+f(num(t.hT)-num(t.hP))+' €<br>Masraf iadesi: '+f(eu)+' €<br>Parsiyel ve telefon: '+f(pc.tot)+' €<br><b>Şirketten alınacak toplam: '+f(m.rec)+' €</b></p>'+
-  '<h3>Mazot ve kilometre</h3><table>'+kv('Çıkış kilometresi',t.k1!==''?f(num(t.k1),0)+' km':'-')+kv('Çıkış mazot',t.l1!==''?f(num(t.l1),0)+' L':'-')+kv('Alınan mazot',lst(t.mz)+(mzS?'<br><b>Toplam '+f(mzS,0)+' L</b>':''))+kv('Alınan AdBlue',lst(t.ab)+(abS?'<br><b>Toplam '+f(abS,0)+' L</b>':''))+kv('Dorse teslim yeri',esc(t.tes||'-'))+kv('Dönüş kilometresi',t.kn!==''?f(num(t.kn),0)+' km':'-')+kv('Dönüş mazot',t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?kv('Gidilen yol',f(yol,0)+' km'):'')+(yol>0&&t.l2!==''?kv('Toplam tüketim',f(tuk,0)+' L · '+f(tuk/yol*100,1)+' L/100 km'):'')+'</table></div>';
+  '<h3>Mazot ve kilometre</h3><table>'+kv('Çıkış kilometresi',t.k1!==''?f(num(t.k1),0)+' km':'-')+kv('Çıkış mazot',t.l1!==''?f(num(t.l1),0)+' L':'-')+kv('Alınan mazot (ülke)',lst(t.mz)+(mzS?'<br><b>Toplam '+f(mzS,0)+' L</b>':''))+kv('Toplam mazot (çıkış + alınan)',(t.l1!==''||mzS)?f(num(t.l1)+mzS,0)+' L':'-')+kv('Alınan AdBlue (ülke)',lst(t.ab)+(abS?'<br><b>Toplam '+f(abS,0)+' L</b>':''))+kv('Dorse alınan yer',esc(t.dyer||'-'))+kv('Dorse teslim yeri',esc(t.tes||'-'))+kv('Dönüş kilometresi',t.kn!==''?f(num(t.kn),0)+' km':'-')+kv('Araçta kalan mazot (dönüş)',t.l2!==''?f(num(t.l2),0)+' L':'-')+(yol>0?kv('Toplam kilometre',f(yol,0)+' km'):'')+(yol>0&&t.l2!==''?kv('Toplam tüketim',f(tuk,0)+' L · '+f(tuk/yol*100,1)+' L/100 km'):'')+'</table>'+
+  '<h3>Rapor özeti</h3><p>Yapılan iş: '+esc(t.is||'-')+' ('+fdx(t.d1)+' - '+fdx(t.d2)+')<br>Dorse '+esc(t.dyer||'-')+' konumundan alındı, '+esc(t.tes||'-')+' konumunda teslim edildi.'+(yol>0?'<br>Toplam kilometre: '+f(yol,0)+' km':'')+(yol>0&&t.l2!==''?' · Tüketim: '+f(tuk,0)+' L ('+f(tuk/yol*100,1)+' L/100 km)':'')+'<br>Şirketten alınacak toplam: <b>'+f(m.rec)+' €</b></p></div>';
 }
 function totalHTML(list){
  let r=0,tl=0;
  const rows=list.map((t,i)=>{const m=sums(t);r+=m.rec;tl+=m.tl;return '<tr><td>'+(i+1)+'</td><td>'+esc(t.rota||'Adsız sefer')+'</td><td>'+fdx(t.d1)+' → '+fdx(t.d2)+'</td><td>'+esc(t.is||'-')+'</td><td style="text-align:right">'+f(m.rec)+' €</td><td style="text-align:right">'+f(m.tl)+' ₺</td></tr>'}).join('');
  return '<div class="sf"><h2>Sefer Raporu ('+list.length+' dosya)</h2><p>Rapor tarihi: '+fd2(today())+'</p><table><tr><th>#</th><th>Dosya</th><th>Tarih</th><th>Yapılan iş</th><th>Alınacak (€)</th><th>TL masraf</th></tr>'+rows+'<tr><th colspan="4" style="text-align:right">Toplam</th><th style="text-align:right">'+f(r)+' €</th><th style="text-align:right">'+f(tl)+' ₺</th></tr></table></div>';
 }
+function syncMazot(t,p){
+ const E=v=>v===''||v==null;
+ if(E(t.cek))t.cek=p.pc||'';
+ if(E(t.dor))t.dor=p.pd||'';
+ if(E(t.d1))t.d1=p.d1||'';
+ if(E(t.d2))t.d2=p.d2||'';
+ if(E(t.k1))t.k1=p.k1;
+ if(E(t.l1))t.l1=p.l1;
+ if(E(t.kn))t.kn=p.kn;
+ if(E(t.l2))t.l2=p.real;
+ if(!t.mz.length)t.mz=p.buys.filter(b=>num(b.l)>0).map(b=>({l:b.l,u:b.u||''}));
+ save();
+}
 function openReport(list){
+ const cu=T();if(list.includes(cu)&&!cu.bitti){syncMazot(cu,P());fillInf()}
  const multi=list.length>1;
  $('rview').innerHTML='<div class="bar"><button id="rv-pr">Yazdır / PDF</button><button id="rv-sh">Paylaş / Kopyala</button><button id="rv-x">Kapat</button></div>'+(multi?totalHTML(list):'')+list.map((t,i)=>secHTML(t,i,multi)).join('')+(multi?'':'<p>Rapor tarihi: '+fd2(today())+'</p>');
  $('rview').hidden=false;$('rview').scrollTop=0;
@@ -501,7 +524,19 @@ $('rp').onclick=()=>openReport([T()]);
 $('bk').onclick=()=>{const b=new Blob([JSON.stringify(S)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mazot-yedek-'+today()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),3000);$('akst').textContent='Yedek dosyası indirildi.'};
 $('rs').onchange=e=>{const fl=e.target.files[0];e.target.value='';if(!fl)return;const r=new FileReader();r.onload=()=>{try{const sn=snap();const d=JSON.parse(r.result);if(!d.profiles||!d.profiles.length||!d.trips)throw 0;S=d;save();fillTrip();drawAll();drawAcc();toast('Yedek yüklendi.',sn)}catch(x){alert('Yedek dosyası okunamadı.')}};r.readAsText(fl)};
 drawAll();fillTrip();drawAcc();
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+async function offStatus(){
+ const el=$('offst');
+ if(!('serviceWorker' in navigator)){el.textContent='Çevrimdışı kullanım: bu tarayıcıda desteklenmiyor.';return}
+ try{
+  let ok=false;const keys=await caches.keys();
+  for(const k of keys){if(k.startsWith('mazot-v')){const c=await caches.open(k);if(await c.match('./index.html'))ok=true}}
+  el.textContent=ok?'Çevrimdışı kullanım: HAZIR ✓ İnternet olmadan açılır.':'Çevrimdışı kullanım: henüz hazır değil. İnternet varken uygulamayı kapatıp tekrar aç.';
+ }catch(e){el.textContent='Çevrimdışı durum okunamadı.'}
+}
+const offBar=()=>{$('offbar').hidden=navigator.onLine};
+window.addEventListener('online',offBar);window.addEventListener('offline',offBar);offBar();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').then(()=>setTimeout(offStatus,2000)).catch(()=>{$('offst').textContent='Çevrimdışı kayıt başarısız. Sayfayı https adresinden aç.'});
+else offStatus();
 </script>
 </body>
 </html>
